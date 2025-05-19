@@ -33,13 +33,12 @@
 
 extern const AP_HAL::HAL& hal;
 
-#define LOGGER_PAGE_SIZE 1024UL
-
 #define MB_to_B 1000000
 #define B_to_MB 0.000001
 
 // time between tries to open log
 #define LOGGER_FILE_REOPEN_MS 5000
+#define LOGGER_PAGE_SIZE 1024UL
 
 /*
   constructor
@@ -70,29 +69,6 @@ AP_Logger_File::AP_Logger_File(AP_Logger &front,
 
 // }
 
-void AP_Logger_File::write_srp_data(const uint8_t *data, uint16_t length, uint64_t timestamp_us)
-{
-    if (_srp_log_file < 0) {
-        ::printf("SRP: Log file not open (fd=%d)\n", _srp_log_file);
-        return;
-    }
-
-    struct __attribute__((__packed__)) {
-        uint64_t timestamp_us;
-        uint16_t length;
-    } header;
-
-    header.timestamp_us = timestamp_us;
-    header.length = length;
-
-    int written1 = AP::FS().write(_srp_log_file, &header, sizeof(header));
-    int written2 = AP::FS().write(_srp_log_file, data, length);
-    AP::FS().fsync(_srp_log_file);
-
-    ::printf("SRP: Wrote header (%d bytes), data (%d bytes), timestamp_us=%llu\n",
-             written1, written2, (unsigned long long)timestamp_us);
-}
-
 void AP_Logger_File::ensure_log_directory_exists()
 {
     int ret;
@@ -105,13 +81,6 @@ void AP_Logger_File::ensure_log_directory_exists()
     }
     if (ret == -1 && errno != EEXIST) {
         printf("Failed to create log directory %s : %s\n", _log_directory, strerror(errno));
-    }
-    ret = AP::FS().stat("APM/SRP", &st);
-    if (ret == -1) {
-        ret = AP::FS().mkdir("APM/SRP");
-    }
-    if (ret == -1 && errno != EEXIST) {
-        printf("Failed to create srp directory %s : %s\n", "APM/SRP", strerror(errno));
     }
 }
 
@@ -135,6 +104,8 @@ void AP_Logger_File::Init()
         DEV_PRINTF("Out of memory for logging\n");
         return;
     }
+
+    _srp_buf.set_size(4096); // or larger if needed
 
     DEV_PRINTF("AP_Logger_File: buffer size=%u\n", (unsigned)bufsize);
 
@@ -786,17 +757,21 @@ uint16_t AP_Logger_File::get_num_logs()
 void AP_Logger_File::stop_logging(void)
 {
     // best-case effort to avoid annoying the IO thread
-    const bool have_sem = write_fd_semaphore.take(hal.util->get_soft_armed()?1:20);
+    const bool have_sem = write_fd_semaphore.take(hal.util->get_soft_armed() ? 1 : 20);
+
     if (_write_fd != -1) {
         int fd = _write_fd;
         _write_fd = -1;
         AP::FS().close(fd);
     }
+
+    // Flush SRP log before closing
     if (_srp_log_file >= 0) {
         int fd = _srp_log_file;
-        _srp_log_file = -1;
+        _srp_log_file= -1;
         AP::FS().close(fd);
     }
+
     if (have_sem) {
         write_fd_semaphore.give();
     }
@@ -921,24 +896,44 @@ void AP_Logger_File::start_new_log(void)
         }
         return;
     }
-    // Create SRP log file
-    char srp_path[64];
-    snprintf(srp_path, sizeof(srp_path), "APM/SRP/srp_log%03u.bin", log_num);
-    _srp_log_file = AP::FS().open(srp_path, O_WRONLY|O_CREAT|O_TRUNC);
-    if (_srp_log_file < 0) {
-        ::printf("SRP log open failed for %s\n", srp_path);
-    }
     _last_write_ms = AP_HAL::millis();
     _open_error_ms = 0;
     _write_offset = 0;
     _writebuf.clear();
+    
+    if (_write_filename) {
+        free(_write_filename);
+        _write_filename = nullptr;        
+    }
+    _write_filename = _log_file_name(log_num+1);
+    if (_write_filename == nullptr) {
+        write_fd_semaphore.give();
+        return;
+    }
+    EXPECT_DELAY_MS(3000);
+    _srp_log_file = AP::FS().open(_write_filename, O_CREAT | O_TRUNC | O_WRONLY);
+    if (_srp_log_file == -1) {
+        ::printf("errno = %d (0x%02X)\n", errno, errno);    
+    } 
     write_fd_semaphore.give();
 
     // now update lastlog.txt with the new log number
     last_log_is_marked_discard = _front._params.log_disarmed == AP_Logger::LogDisarmed::LOG_WHILE_DISARMED_DISCARD;
-    if (!write_lastlog_file(log_num)) {
+    if (!write_lastlog_file(log_num+1)) {
         _open_error_ms = AP_HAL::millis();
     }
+}
+
+void AP_Logger_File::write_srp_data(const uint8_t* data, uint16_t length)
+{
+    if (_srp_log_file < 0 || !_srp_buf.get_size()) return;
+
+    if (_srp_buf.space() < length) {
+        // Optional: drop or flush
+        return;
+    }
+
+    _srp_buf.write(data, length);
 }
 
 /*
@@ -1099,6 +1094,23 @@ void AP_Logger_File::io_timer(void)
         AP::FS().fsync(_write_fd);
         last_io_operation = "";
 #endif
+
+    if (_srp_log_file >= 0 && _srp_buf.available() > 0) {
+        uint32_t to_write;
+        const uint8_t* ptr = _srp_buf.readptr(to_write);
+
+        // Optionally limit to N bytes per write
+        to_write = MIN(to_write, 512);
+
+        ssize_t written = AP::FS().write(_srp_log_file, ptr, to_write);
+        if (written > 0) {
+            _srp_buf.advance(written);
+        } else {
+            ::printf("SRP write failed: %s\n", strerror(errno));
+        }
+
+        AP::FS().fsync(_srp_log_file);
+    }
 
 #if AP_RTC_ENABLED && CONFIG_HAL_BOARD == HAL_BOARD_CHIBIOS
         // ChibiOS does not update mtime on writes, so if we opened
