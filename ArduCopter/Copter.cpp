@@ -962,7 +962,20 @@ bool Copter::get_rate_ef_targets(Vector3f& rate_ef_targets) const
 
 void Copter::handle_logging_data(const mavlink_message_t& msg)
 {
+    static uint8_t srp_log_debug_count = 0;
+
+    AP_Logger_File *logger_file = AP::logger().get_file_backend();
+
+    // FIXED: Correct precedence in should_log() + armed check
     if (!should_log(MASK_LOG_SRP) || !arming.is_armed()) {
+        return;
+    }
+
+    if (logger_file == nullptr) {
+        if (srp_log_debug_count < 5) {
+            gcs().send_text(MAV_SEVERITY_WARNING, "SRP: logger_file null");
+            srp_log_debug_count++;
+        }
         return;
     }
 
@@ -970,11 +983,19 @@ void Copter::handle_logging_data(const mavlink_message_t& msg)
     mavlink_msg_logging_data_decode(&msg, &m);
 
     uint64_t timestamp_us = AP::gps().time_epoch_usec(AP::gps().primary_sensor());
-    AP_Logger_File *logger_file = AP::logger().get_file_backend();
-    if (logger_file != nullptr) {
-        logger_file->write_srp_data(m.data, m.length, timestamp_us);
-    }
 
+    logger_file->write_srp_data(reinterpret_cast<const uint8_t*>(&timestamp_us), sizeof(timestamp_us));
+    logger_file->write_srp_data(m.data, m.length);
+
+    if (srp_log_debug_count < 5) {
+        gcs().send_text(MAV_SEVERITY_INFO,
+            "SRP log #%u: %u bytes at %llu us", 
+            srp_log_debug_count + 1,
+            (unsigned)m.length,
+            (unsigned long long)timestamp_us
+        );
+        srp_log_debug_count++;
+    }
 }
 
 // void Copter::handle_logging_data(const mavlink_message_t& msg)

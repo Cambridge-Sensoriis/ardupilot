@@ -11,6 +11,12 @@
 #include <AP_HAL/utility/RingBuffer.h>
 #include "AP_Logger_Backend.h"
 
+#include <stdint.h>
+#include <unistd.h>
+#include <fcntl.h>
+
+
+
 #if HAL_LOGGING_FILESYSTEM_ENABLED
 
 #ifndef HAL_LOGGER_WRITE_CHUNK_SIZE
@@ -70,8 +76,7 @@ public:
     bool logging_started(void) const override { return _write_fd != -1; }
     void io_timer(void) override;
 
-    void write_srp_data(const uint8_t *data, uint16_t length, uint64_t timestamp_us);
-    void close_srp_log();  // we’ll define this below
+    void write_srp_data(const uint8_t* data, uint16_t length);
 
 protected:
 
@@ -118,6 +123,8 @@ private:
 
     // write buffer
     ByteBuffer _writebuf{0};
+    ByteBuffer _srp_buf{0};
+
     const uint16_t _writebuf_chunk = HAL_LOGGER_WRITE_CHUNK_SIZE;
     uint32_t _last_write_time;
 
