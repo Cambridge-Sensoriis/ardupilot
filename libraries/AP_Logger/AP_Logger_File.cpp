@@ -55,6 +55,46 @@ AP_Logger_File::AP_Logger_File(AP_Logger &front,
     df_stats_clear();
 }
 
+// void AP_Logger_File::write_srp_data(const uint8_t *data, uint16_t length, uint64_t timestamp_us)
+// {
+//     if (_srp_log_file < 0) return;
+
+//     struct __attribute__((__packed__)) {
+//         uint64_t timestamp_us;
+//         uint16_t length;
+//     } header;
+
+//     header.timestamp_us = timestamp_us;
+//     header.length = length;
+
+//     AP::FS().write(_srp_log_file, &header, sizeof(header));
+//     AP::FS().write(_srp_log_file, data, length);
+//     AP::FS().sync();
+
+// }
+
+void AP_Logger_File::write_srp_data(const uint8_t *data, uint16_t length, uint64_t timestamp_us)
+{
+    if (_srp_log_file < 0) {
+        ::printf("SRP: Log file not open (fd=%d)\n", _srp_log_file);
+        return;
+    }
+
+    struct __attribute__((__packed__)) {
+        uint64_t timestamp_us;
+        uint16_t length;
+    } header;
+
+    header.timestamp_us = timestamp_us;
+    header.length = length;
+
+    int written1 = AP::FS().write(_srp_log_file, &header, sizeof(header));
+    int written2 = AP::FS().write(_srp_log_file, data, length);
+    AP::FS().fsync(_srp_log_file);
+
+    ::printf("SRP: Wrote header (%d bytes), data (%d bytes), timestamp_us=%llu\n",
+             written1, written2, (unsigned long long)timestamp_us);
+}
 
 void AP_Logger_File::ensure_log_directory_exists()
 {
@@ -68,6 +108,13 @@ void AP_Logger_File::ensure_log_directory_exists()
     }
     if (ret == -1 && errno != EEXIST) {
         GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "Failed to create log directory %s : %s", _log_directory, strerror(errno));
+    }
+    ret = AP::FS().stat("APM/SRP", &st);
+    if (ret == -1) {
+        ret = AP::FS().mkdir("APM/SRP");
+    }
+    if (ret == -1 && errno != EEXIST) {
+        printf("Failed to create srp directory %s : %s\n", "APM/SRP", strerror(errno));
     }
 }
 
@@ -718,6 +765,11 @@ void AP_Logger_File::stop_logging(void)
         _write_fd = -1;
         AP::FS().close(fd);
     }
+    if (_srp_log_file >= 0) {
+        int fd = _srp_log_file;
+        _srp_log_file = -1;
+        AP::FS().close(fd);
+    }
     if (have_sem) {
         write_fd_semaphore.give();
     }
@@ -841,6 +893,13 @@ void AP_Logger_File::start_new_log(void)
                                 _write_filename, strerror(saved_errno));
         }
         return;
+    }
+    // Create SRP log file
+    char srp_path[64];
+    snprintf(srp_path, sizeof(srp_path), "APM/SRP/srp_log%03u.bin", log_num);
+    _srp_log_file = AP::FS().open(srp_path, O_WRONLY|O_CREAT|O_TRUNC);
+    if (_srp_log_file < 0) {
+        ::printf("SRP log open failed for %s\n", srp_path);
     }
     _last_write_ms = AP_HAL::millis();
     _open_error_ms = 0;

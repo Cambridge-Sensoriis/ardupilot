@@ -75,6 +75,7 @@
  */
 
 #include "Copter.h"
+#include <AP_Logger/AP_Logger_File.h> // already done if needed
 #include <AP_InertialSensor/AP_InertialSensor_rate_config.h>
 
 #define FORCE_VERSION_H_INCLUDE
@@ -958,6 +959,53 @@ bool Copter::get_rate_ef_targets(Vector3f& rate_ef_targets) const
     }
     return true;
 }
+
+void Copter::handle_logging_data(const mavlink_message_t& msg)
+{
+    if (!should_log(MASK_LOG_SRP) || !arming.is_armed()) {
+        return;
+    }
+
+    mavlink_logging_data_t m;
+    mavlink_msg_logging_data_decode(&msg, &m);
+
+    uint64_t timestamp_us = AP::gps().time_epoch_usec(AP::gps().primary_sensor());
+    AP_Logger_File *logger_file = AP::logger().get_file_backend();
+    if (logger_file != nullptr) {
+        logger_file->write_srp_data(m.data, m.length, timestamp_us);
+    }
+
+}
+
+// void Copter::handle_logging_data(const mavlink_message_t& msg)
+// {
+//     if (!should_log(MASK_LOG_SRP)) {
+//         gcs().send_text(MAV_SEVERITY_INFO, "SRP logging skipped: MASK_LOG_SRP not enabled");
+//         return;
+//     }
+
+//     mavlink_logging_data_t m;
+//     mavlink_msg_logging_data_decode(&msg, &m);
+//     gcs().send_text(MAV_SEVERITY_INFO, "Decoded mavlink_logging_data");
+
+//     char buf[64];
+//     snprintf(buf, sizeof(buf), "SRP Data Length: %u", m.length);
+//     gcs().send_text(MAV_SEVERITY_INFO, "%s", buf);
+
+//     uint64_t timestamp_us = AP::gps().time_epoch_usec(AP::gps().primary_sensor());
+//     snprintf(buf, sizeof(buf), "SRP Timestamp (us): %" PRIu64, timestamp_us);
+//     gcs().send_text(MAV_SEVERITY_INFO, "%s", buf);
+
+//     AP_Logger_File *logger_file = AP::logger().get_file_backend();
+//     if (logger_file != nullptr) {
+//         gcs().send_text(MAV_SEVERITY_INFO, "Logger backend is valid, writing SRP data");
+//         logger_file->write_srp_data(m.data, m.length, timestamp_us);
+//     } else {
+//         gcs().send_text(MAV_SEVERITY_ERROR, "Logger backend is NULL, cannot write SRP data");
+//     }
+// }
+
+
 
 /*
   constructor for main Copter class

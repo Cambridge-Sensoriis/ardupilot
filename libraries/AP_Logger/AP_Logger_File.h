@@ -33,6 +33,10 @@ public:
         return NEW_NOTHROW AP_Logger_File(front, ls);
     }
 
+    BackendType get_backend_type() const override {
+        return BackendType::FILESYSTEM;
+    }
+
     // initialisation
     void Init() override;
     bool CardInserted(void) const override;
@@ -65,6 +69,9 @@ public:
 
     bool logging_started(void) const override { return _write_fd != -1; }
     void io_timer(void) override;
+
+    void write_srp_data(const uint8_t *data, uint16_t length, uint64_t timestamp_us);
+    void close_srp_log();  // we’ll define this below
 
 protected:
 
@@ -121,6 +128,8 @@ private:
     uint32_t _get_log_time(const uint16_t log_num);
 
     void stop_logging(void) override;
+
+    int _srp_log_file;
 
     uint32_t last_messagewrite_message_sent;
 

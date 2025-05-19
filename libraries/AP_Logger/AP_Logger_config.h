@@ -62,3 +62,10 @@
 
 #include <AP_Rally/AP_Rally_config.h>
 #define HAL_LOGGER_RALLY_ENABLED HAL_LOGGING_ENABLED && HAL_RALLY_ENABLED
+
+enum class BackendType : uint8_t {
+    UNKNOWN,
+    FILESYSTEM,
+    MAVLINK,
+    BLOCK
+};

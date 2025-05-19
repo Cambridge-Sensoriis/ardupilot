@@ -1267,6 +1267,13 @@ void GCS_MAVLINK_Copter::handle_message(const mavlink_message_t &msg)
         copter.g2.toy_mode.handle_message(msg);
         break;
 #endif
+
+#if HAL_LOGGING_ENABLED
+    case MAVLINK_MSG_ID_LOGGING_DATA:
+        copter.handle_logging_data(msg);
+        break;
+#endif
+        
     default:
         GCS_MAVLINK::handle_message(msg);
         break;
