@@ -13,6 +13,7 @@
 #include <AP_Mission/AP_Mission.h>
 #include <AP_Logger/LogStructure.h>
 #include <AP_Vehicle/ModeReason.h>
+#include "AP_Logger_File.h"
 
 #include <stdint.h>
 
@@ -316,6 +317,16 @@ public:
     uint8_t log_replay(void) const { return _params.log_replay; }
 
     vehicle_startup_message_Writer _vehicle_messages;
+
+    AP_Logger_File *get_file_backend() {
+    for (uint8_t i = 0; i < _next_backend; i++) {
+        if (backends[i] != nullptr &&
+            backends[i]->get_backend_type() == BackendType::FILESYSTEM) {
+            return static_cast<AP_Logger_File *>(backends[i]);
+        }
+    }
+    return nullptr;
+}
 
     enum class LogDisarmed : uint8_t {
         NONE = 0,

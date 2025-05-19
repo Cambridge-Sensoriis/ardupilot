@@ -10,6 +10,7 @@
 #include <AP_Mission/AP_Mission.h>
 #include <AP_Vehicle/ModeReason.h>
 
+
 class LoggerMessageWriter_DFLogStart;
 
 // class to handle rate limiting of log messages
@@ -53,6 +54,10 @@ public:
                       class LoggerMessageWriter_DFLogStart *writer);
 
     vehicle_startup_message_Writer vehicle_message_writer() const;
+
+    virtual BackendType get_backend_type() const {
+        return BackendType::UNKNOWN;
+    }
 
     virtual bool CardInserted(void) const = 0;
 
