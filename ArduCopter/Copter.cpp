@@ -985,17 +985,10 @@ void Copter::handle_logging_data(const mavlink_message_t& msg)
     uint64_t timestamp_us = AP::gps().time_epoch_usec(AP::gps().primary_sensor());
 
     logger_file->write_srp_data(reinterpret_cast<const uint8_t*>(&timestamp_us), sizeof(timestamp_us));
+    logger_file->write_srp_data(m.sequence, sizeof(m.sequence));
+    logger_file->write_srp_data(m.first_message_offset, sizeof(m.first_message_offset));
+    logger_file->write_srp_data(m.length, sizeof(m.length));
     logger_file->write_srp_data(m.data, m.length);
-
-    if (srp_log_debug_count < 5) {
-        gcs().send_text(MAV_SEVERITY_INFO,
-            "SRP log #%u: %u bytes at %llu us", 
-            srp_log_debug_count + 1,
-            (unsigned)m.length,
-            (unsigned long long)timestamp_us
-        );
-        srp_log_debug_count++;
-    }
 }
 
 // void Copter::handle_logging_data(const mavlink_message_t& msg)
