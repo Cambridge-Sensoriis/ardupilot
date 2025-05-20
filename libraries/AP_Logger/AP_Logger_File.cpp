@@ -850,9 +850,12 @@ void AP_Logger_File::start_new_log(void)
     }
 
     uint16_t log_num = find_last_log();
-    // re-use empty logs if possible
-    if (_get_log_size(log_num) > 0 || log_num == 0) {
+
+    // Ensure next log_num is odd
+    if (log_num % 2 == 0) {
         log_num++;
+    } else if (_get_log_size(log_num) > 0 || log_num == 0) {
+        log_num += 2;
     }
     if (log_num > _front.get_max_num_logs()) {
         log_num = 1;
@@ -901,20 +904,14 @@ void AP_Logger_File::start_new_log(void)
     _write_offset = 0;
     _writebuf.clear();
     
-    if (_write_filename) {
-        free(_write_filename);
-        _write_filename = nullptr;        
+    // SRP log gets next even number
+    uint16_t srp_log_num = log_num + 1;
+    char *srp_fname = _log_file_name(srp_log_num);
+    if (srp_fname != nullptr) {
+        _srp_log_file = AP::FS().open(srp_fname, O_CREAT | O_TRUNC | O_WRONLY);
+        free(srp_fname);
     }
-    _write_filename = _log_file_name(log_num+1);
-    if (_write_filename == nullptr) {
-        write_fd_semaphore.give();
-        return;
-    }
-    EXPECT_DELAY_MS(3000);
-    _srp_log_file = AP::FS().open(_write_filename, O_CREAT | O_TRUNC | O_WRONLY);
-    if (_srp_log_file == -1) {
-        ::printf("errno = %d (0x%02X)\n", errno, errno);    
-    } 
+    
     write_fd_semaphore.give();
 
     // now update lastlog.txt with the new log number
