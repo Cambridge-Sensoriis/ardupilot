@@ -823,7 +823,7 @@ void Copter::handle_logging_data(const mavlink_message_t& msg)
     AP_Logger_File *logger_file = AP::logger().get_file_backend();
 
     // FIXED: Correct precedence in should_log() + armed check
-    if (!should_log(MASK_LOG_SRP) || !arming.is_armed()) {
+    if (!should_log(MASK_LOG_SRP)) {
         return;
     }
 
@@ -841,9 +841,9 @@ void Copter::handle_logging_data(const mavlink_message_t& msg)
     uint64_t timestamp_us = AP::gps().time_epoch_usec(AP::gps().primary_sensor());
 
     logger_file->write_srp_data(reinterpret_cast<const uint8_t*>(&timestamp_us), sizeof(timestamp_us));
-    logger_file->write_srp_data(m.sequence, sizeof(m.sequence));
-    logger_file->write_srp_data(m.first_message_offset, sizeof(m.first_message_offset));
-    logger_file->write_srp_data(m.length, sizeof(m.length));
+    logger_file->write_srp_data(reinterpret_cast<const uint8_t*>(&m.sequence), sizeof(m.sequence));
+    logger_file->write_srp_data(reinterpret_cast<const uint8_t*>(&m.first_message_offset), sizeof(m.first_message_offset));
+    logger_file->write_srp_data(reinterpret_cast<const uint8_t*>(&m.length), sizeof(m.length));
     logger_file->write_srp_data(m.data, m.length);
 }
 
