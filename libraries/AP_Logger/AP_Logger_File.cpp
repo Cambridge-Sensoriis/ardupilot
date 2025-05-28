@@ -36,12 +36,13 @@
 
 extern const AP_HAL::HAL& hal;
 
+#define LOGGER_PAGE_SIZE 1024UL
+
 #define MB_to_B 1000000
 #define B_to_MB 0.000001
 
 // time between tries to open log
 #define LOGGER_FILE_REOPEN_MS 5000
-#define LOGGER_PAGE_SIZE 1024UL
 
 /*
   constructor
@@ -54,23 +55,6 @@ AP_Logger_File::AP_Logger_File(AP_Logger &front,
     df_stats_clear();
 }
 
-// void AP_Logger_File::write_srp_data(const uint8_t *data, uint16_t length, uint64_t timestamp_us)
-// {
-//     if (_srp_log_file < 0) return;
-
-//     struct __attribute__((__packed__)) {
-//         uint64_t timestamp_us;
-//         uint16_t length;
-//     } header;
-
-//     header.timestamp_us = timestamp_us;
-//     header.length = length;
-
-//     AP::FS().write(_srp_log_file, &header, sizeof(header));
-//     AP::FS().write(_srp_log_file, data, length);
-//     AP::FS().sync();
-
-// }
 
 void AP_Logger_File::ensure_log_directory_exists()
 {
@@ -107,8 +91,6 @@ void AP_Logger_File::Init()
         DEV_PRINTF("Out of memory for logging\n");
         return;
     }
-
-    _srp_buf.set_size(4096); // or larger if needed
 
     DEV_PRINTF("AP_Logger_File: buffer size=%u\n", (unsigned)bufsize);
 
@@ -730,21 +712,12 @@ uint16_t AP_Logger_File::get_num_logs()
 void AP_Logger_File::stop_logging(void)
 {
     // best-case effort to avoid annoying the IO thread
-    const bool have_sem = write_fd_semaphore.take(hal.util->get_soft_armed() ? 1 : 20);
-
+    const bool have_sem = write_fd_semaphore.take(hal.util->get_soft_armed()?1:20);
     if (_write_fd != -1) {
         int fd = _write_fd;
         _write_fd = -1;
         AP::FS().close(fd);
     }
-
-    // Flush SRP log before closing
-    if (_srp_log_file >= 0) {
-        int fd = _srp_log_file;
-        _srp_log_file= -1;
-        AP::FS().close(fd);
-    }
-
     if (have_sem) {
         write_fd_semaphore.give();
     }
@@ -823,12 +796,9 @@ void AP_Logger_File::start_new_log(void)
     }
 
     uint16_t log_num = find_last_log();
-
-    // Ensure next log_num is odd
-    if (log_num % 2 == 0) {
+    // re-use empty logs if possible
+    if (_get_log_size(log_num) > 0 || log_num == 0) {
         log_num++;
-    } else if (_get_log_size(log_num) > 0 || log_num == 0) {
-        log_num += 2;
     }
     if (log_num > _front.get_max_num_logs()) {
         log_num = 1;
@@ -876,34 +846,13 @@ void AP_Logger_File::start_new_log(void)
     _open_error_ms = 0;
     _write_offset = 0;
     _writebuf.clear();
-    
-    // SRP log gets next even number
-    uint16_t srp_log_num = log_num + 1;
-    char *srp_fname = _log_file_name(srp_log_num);
-    if (srp_fname != nullptr) {
-        _srp_log_file = AP::FS().open(srp_fname, O_CREAT | O_TRUNC | O_WRONLY);
-        free(srp_fname);
-    }
-    
     write_fd_semaphore.give();
 
     // now update lastlog.txt with the new log number
     last_log_is_marked_discard = _front._params.log_disarmed == AP_Logger::LogDisarmed::LOG_WHILE_DISARMED_DISCARD;
-    if (!write_lastlog_file(log_num+1)) {
+    if (!write_lastlog_file(log_num)) {
         _open_error_ms = AP_HAL::millis();
     }
-}
-
-void AP_Logger_File::write_srp_data(const uint8_t* data, uint16_t length)
-{
-    if (_srp_log_file < 0 || !_srp_buf.get_size()) return;
-
-    if (_srp_buf.space() < length) {
-        // Optional: drop or flush
-        return;
-    }
-
-    _srp_buf.write(data, length);
 }
 
 /*
@@ -1074,23 +1023,6 @@ void AP_Logger_File::io_timer(void)
             AP::FS().fsync(_write_fd);
             last_io_operation = "";
         }
-
-    if (_srp_log_file >= 0 && _srp_buf.available() > 0) {
-        uint32_t to_write;
-        const uint8_t* ptr = _srp_buf.readptr(to_write);
-
-        // Optionally limit to N bytes per write
-        to_write = MIN(to_write, 512);
-
-        ssize_t written = AP::FS().write(_srp_log_file, ptr, to_write);
-        if (written > 0) {
-            _srp_buf.advance(written);
-        } else {
-            ::printf("SRP write failed: %s\n", strerror(errno));
-        }
-
-        AP::FS().fsync(_srp_log_file);
-    }
 
 #if AP_RTC_ENABLED && CONFIG_HAL_BOARD == HAL_BOARD_CHIBIOS
         // ChibiOS does not update mtime on writes, so if we opened

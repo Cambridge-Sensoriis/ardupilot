@@ -640,6 +640,15 @@ struct PACKED log_VER {
     uint32_t iomcu_mcu_id;
     uint32_t iomcu_cpu_id;
 };
+struct PACKED log_SRPRAW {
+  LOG_PACKET_HEADER;
+  uint64_t time_us;
+  uint16_t sequence;
+  uint8_t  length;
+  int16_t data1[32];
+  int16_t data2[32];
+  int16_t data3[32];
+};
 
 
 // FMT messages define all message formats other than FMT
@@ -1260,7 +1269,10 @@ LOG_STRUCTURE_FROM_AIS \
     { LOG_VER_MSG, sizeof(log_VER), \
       "VER",   "QBHBBBBIZHBBII", "TimeUS,BT,BST,Maj,Min,Pat,FWT,GH,FWS,APJ,BU,FV,IMI,ICI", "s-------------", "F-------------", false }, \
     { LOG_MOTBATT_MSG, sizeof(log_MotBatt), \
-      "MOTB", "QfffffB",  "TimeUS,LiftMax,BatVolt,ThLimit,ThrAvMx,ThrOut,FailFlags", "s------", "F------" , true }
+      "MOTB", "QfffffB",  "TimeUS,LiftMax,BatVolt,ThLimit,ThrAvMx,ThrOut,FailFlags", "s------", "F------" , true }, \
+    { LOG_SRPRAW_MSG, sizeof(log_SRPRAW), \
+      "SRP", "QHBaaa", "TimeUS,Sequence,Length,Data1,Data2,Data3", "s----", "F----", true }
+
 
 // message types 0 to 31 reserved for vehicle-specific use
 
@@ -1348,6 +1360,7 @@ enum LogMessages : uint8_t {
     LOG_RCOUT3_MSG,
     LOG_IDS_FROM_FENCE,
     LOG_IDS_FROM_HAL,
+    LOG_SRPRAW_MSG = 210,
 
     _LOG_LAST_MSG_
 };
