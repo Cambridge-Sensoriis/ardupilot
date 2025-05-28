@@ -818,19 +818,24 @@ bool Copter::get_rate_ef_targets(Vector3f& rate_ef_targets) const
 
 void Copter::handle_logging_data(const mavlink_message_t& msg)
 {
+    static struct {
+        uint8_t data[16384];
+        uint16_t expected_seq;
+        uint16_t received_len;
+        bool collecting;
+    } srp_buffer = {};
+
     static uint8_t srp_log_debug_count = 0;
 
-    AP_Logger_File *logger_file = AP::logger().get_file_backend();
-
-    // FIXED: Correct precedence in should_log() + armed check
+    // Only log if enabled and backend is available
     if (!should_log(MASK_LOG_SRP)) {
         return;
     }
 
-    if (logger_file == nullptr) {
-        if (srp_log_debug_count < 5) {
+    AP_Logger_File* logger_file = AP::logger().get_file_backend();
+    if (!logger_file) {
+        if (srp_log_debug_count++ < 5) {
             gcs().send_text(MAV_SEVERITY_WARNING, "SRP: logger_file null");
-            srp_log_debug_count++;
         }
         return;
     }
@@ -838,43 +843,70 @@ void Copter::handle_logging_data(const mavlink_message_t& msg)
     mavlink_logging_data_t m;
     mavlink_msg_logging_data_decode(&msg, &m);
 
-    uint64_t timestamp_us = AP::gps().time_epoch_usec(AP::gps().primary_sensor());
+    // Start new message if not collecting or out-of-order
+    if (!srp_buffer.collecting || m.sequence != srp_buffer.expected_seq) {
+        if (srp_buffer.collecting && srp_log_debug_count++ < 5) {
+            gcs().send_text(MAV_SEVERITY_WARNING, "SRP: dropped incomplete msg (seq %u)", srp_buffer.expected_seq);
+        }
 
-    logger_file->write_srp_data(reinterpret_cast<const uint8_t*>(&timestamp_us), sizeof(timestamp_us));
-    logger_file->write_srp_data(reinterpret_cast<const uint8_t*>(&m.sequence), sizeof(m.sequence));
-    logger_file->write_srp_data(reinterpret_cast<const uint8_t*>(&m.first_message_offset), sizeof(m.first_message_offset));
-    logger_file->write_srp_data(reinterpret_cast<const uint8_t*>(&m.length), sizeof(m.length));
-    logger_file->write_srp_data(m.data, m.length);
+        srp_buffer.collecting = true;
+        srp_buffer.received_len = 0;
+        srp_buffer.expected_seq = m.sequence;
+    }
+
+    // Validate space
+    if (srp_buffer.received_len + m.length > sizeof(srp_buffer.data)) {
+        gcs().send_text(MAV_SEVERITY_WARNING, "SRP: buffer overflow at %u", srp_buffer.received_len);
+        srp_buffer.collecting = false;
+        return;
+    }
+
+    // Append fragment
+    memcpy(srp_buffer.data + srp_buffer.received_len, m.data, m.length);
+    srp_buffer.received_len += m.length;
+    srp_buffer.expected_seq++;
+
+    // If message fragment is <249 bytes, treat it as final chunk
+    if (m.length < 249 || srp_buffer.received_len == sizeof(srp_buffer.data)) {
+        uint16_t remaining = srp_buffer.received_len;
+        uint16_t offset = 0;
+        uint16_t packet_seq = 0;
+
+        while (remaining > 0) {
+            uint8_t chunk_len = remaining > 192 ? 192 : remaining;
+
+            log_SRPRAW pkt = {
+                LOG_PACKET_HEADER_INIT(LOG_SRPRAW_MSG),
+                AP_HAL::micros64(),
+                packet_seq++,
+                chunk_len
+            };
+
+            memset(pkt.data1, 0, 64);
+            memset(pkt.data2, 0, 64);
+            memset(pkt.data3, 0, 64);
+
+            if (chunk_len <= 64) {
+                memcpy(pkt.data1, srp_buffer.data + offset, chunk_len);
+            } else if (chunk_len <= 128) {
+                memcpy(pkt.data1, srp_buffer.data + offset, 64);
+                memcpy(pkt.data2, srp_buffer.data + offset + 64, chunk_len - 64);
+            } else {
+                memcpy(pkt.data1, srp_buffer.data + offset, 64);
+                memcpy(pkt.data2, srp_buffer.data + offset + 64, 64);
+                memcpy(pkt.data3, srp_buffer.data + offset + 128, chunk_len - 128);
+            }
+
+            logger_file->WriteBlock(&pkt, sizeof(pkt));
+            offset += chunk_len;
+            remaining -= chunk_len;
+        }
+
+        //gcs().send_text(MAV_SEVERITY_INFO, "SRP: logged %u bytes in %u packets", srp_buffer.received_len, packet_seq);
+
+        srp_buffer.collecting = false;
+    }
 }
-
-// void Copter::handle_logging_data(const mavlink_message_t& msg)
-// {
-//     if (!should_log(MASK_LOG_SRP)) {
-//         gcs().send_text(MAV_SEVERITY_INFO, "SRP logging skipped: MASK_LOG_SRP not enabled");
-//         return;
-//     }
-
-//     mavlink_logging_data_t m;
-//     mavlink_msg_logging_data_decode(&msg, &m);
-//     gcs().send_text(MAV_SEVERITY_INFO, "Decoded mavlink_logging_data");
-
-//     char buf[64];
-//     snprintf(buf, sizeof(buf), "SRP Data Length: %u", m.length);
-//     gcs().send_text(MAV_SEVERITY_INFO, "%s", buf);
-
-//     uint64_t timestamp_us = AP::gps().time_epoch_usec(AP::gps().primary_sensor());
-//     snprintf(buf, sizeof(buf), "SRP Timestamp (us): %" PRIu64, timestamp_us);
-//     gcs().send_text(MAV_SEVERITY_INFO, "%s", buf);
-
-//     AP_Logger_File *logger_file = AP::logger().get_file_backend();
-//     if (logger_file != nullptr) {
-//         gcs().send_text(MAV_SEVERITY_INFO, "Logger backend is valid, writing SRP data");
-//         logger_file->write_srp_data(m.data, m.length, timestamp_us);
-//     } else {
-//         gcs().send_text(MAV_SEVERITY_ERROR, "Logger backend is NULL, cannot write SRP data");
-//     }
-// }
-
 
 
 /*
