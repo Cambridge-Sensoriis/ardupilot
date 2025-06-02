@@ -960,21 +960,22 @@ bool Copter::get_rate_ef_targets(Vector3f& rate_ef_targets) const
     return true;
 }
 
+#define SRP_BUFFER_SIZE 9960
+
+struct SRPStreamBuffer {
+    uint8_t data[SRP_BUFFER_SIZE];
+    uint16_t read_offset = 0;
+    uint16_t write_offset = 0;
+};
+
+static SRPStreamBuffer srp_buf = {};
+static uint16_t srp_packet_seq = 0;
+static uint16_t srp_last_sequence = 0xFFFF;
+static uint8_t srp_log_debug_count = 0;
+
 void Copter::handle_logging_data(const mavlink_message_t& msg)
 {
-    static struct {
-        uint8_t data[16384];
-        uint16_t expected_seq;
-        uint16_t received_len;
-        bool collecting;
-    } srp_buffer = {};
-
-    static uint8_t srp_log_debug_count = 0;
-
-    // Only log if enabled and backend is available
-    if (!should_log(MASK_LOG_SRP)) {
-        return;
-    }
+    if (!should_log(MASK_LOG_SRP)) return;
 
     AP_Logger_File* logger_file = AP::logger().get_file_backend();
     if (!logger_file) {
@@ -987,70 +988,75 @@ void Copter::handle_logging_data(const mavlink_message_t& msg)
     mavlink_logging_data_t m;
     mavlink_msg_logging_data_decode(&msg, &m);
 
-    // Start new message if not collecting or out-of-order
-    if (!srp_buffer.collecting || m.sequence != srp_buffer.expected_seq) {
-        if (srp_buffer.collecting && srp_log_debug_count++ < 5) {
-            gcs().send_text(MAV_SEVERITY_WARNING, "SRP: dropped incomplete msg (seq %u)", srp_buffer.expected_seq);
-        }
+    // Sequence continuity check
+    bool new_sequence = ((uint16_t)(m.sequence - srp_last_sequence) != 1);
+    srp_last_sequence = m.sequence;
 
-        srp_buffer.collecting = true;
-        srp_buffer.received_len = 0;
-        srp_buffer.expected_seq = m.sequence;
+    // Reset buffer on unexpected new sequence (mid-packet loss)
+    if (new_sequence && srp_buf.write_offset > srp_buf.read_offset) {
+        if (srp_log_debug_count++ < 5) {
+            gcs().send_text(MAV_SEVERITY_WARNING, "SRP: dropped mid-packet seq %u", m.sequence);
+        }
+        srp_buf.read_offset = srp_buf.write_offset = 0;
     }
 
-    // Validate space
-    if (srp_buffer.received_len + m.length > sizeof(srp_buffer.data)) {
-        gcs().send_text(MAV_SEVERITY_WARNING, "SRP: buffer overflow at %u", srp_buffer.received_len);
-        srp_buffer.collecting = false;
+    // Overflow protection
+    if (srp_buf.write_offset + m.length > SRP_BUFFER_SIZE) {
+        if (srp_log_debug_count++ < 5) {
+            gcs().send_text(MAV_SEVERITY_WARNING, "SRP: buffer overflow");
+        }
+        srp_buf.read_offset = srp_buf.write_offset = 0;
         return;
     }
 
-    // Append fragment
-    memcpy(srp_buffer.data + srp_buffer.received_len, m.data, m.length);
-    srp_buffer.received_len += m.length;
-    srp_buffer.expected_seq++;
+    // Append new fragment to buffer
+    memcpy(srp_buf.data + srp_buf.write_offset, m.data, m.length);
+    srp_buf.write_offset += m.length;
 
-    // If message fragment is <249 bytes, treat it as final chunk
-    if (m.length < 249 || srp_buffer.received_len == sizeof(srp_buffer.data)) {
-        uint16_t remaining = srp_buffer.received_len;
-        uint16_t offset = 0;
-        uint16_t packet_seq = 0;
+    const uint64_t timestamp = AP_HAL::micros64();
 
-        while (remaining > 0) {
-            uint8_t chunk_len = remaining > 192 ? 192 : remaining;
+    // Write out all full 192-byte chunks
+    while ((srp_buf.write_offset - srp_buf.read_offset) >= 192) {
+        const uint8_t* chunk_ptr = srp_buf.data + srp_buf.read_offset;
 
+        log_SRPRAW pkt = {
+            LOG_PACKET_HEADER_INIT(LOG_SRPRAW_MSG),
+            timestamp,
+            srp_packet_seq++,
+            192
+        };
+
+        memcpy(pkt.data1, chunk_ptr, 64);
+        memcpy(pkt.data2, chunk_ptr + 64, 64);
+        memcpy(pkt.data3, chunk_ptr + 128, 64);
+
+        logger_file->WriteBlock(&pkt, sizeof(pkt));
+        srp_buf.read_offset += 192;
+    }
+
+    // Final fragment → flush remaining <192 bytes
+    if (m.length < 249) {
+        uint16_t remaining = srp_buf.write_offset - srp_buf.read_offset;
+        if (remaining > 0) {
             log_SRPRAW pkt = {
                 LOG_PACKET_HEADER_INIT(LOG_SRPRAW_MSG),
-                AP_HAL::micros64(),
-                packet_seq++,
-                chunk_len
+                timestamp,
+                srp_packet_seq++,
+                static_cast<uint8_t>(remaining)
             };
 
-            memset(pkt.data1, 0, 64);
-            memset(pkt.data2, 0, 64);
-            memset(pkt.data3, 0, 64);
-
-            if (chunk_len <= 64) {
-                memcpy(pkt.data1, srp_buffer.data + offset, chunk_len);
-            } else if (chunk_len <= 128) {
-                memcpy(pkt.data1, srp_buffer.data + offset, 64);
-                memcpy(pkt.data2, srp_buffer.data + offset + 64, chunk_len - 64);
-            } else {
-                memcpy(pkt.data1, srp_buffer.data + offset, 64);
-                memcpy(pkt.data2, srp_buffer.data + offset + 64, 64);
-                memcpy(pkt.data3, srp_buffer.data + offset + 128, chunk_len - 128);
-            }
+            uint8_t* dst = (uint8_t*)&pkt.data1[0];
+            memset(dst, 0, 192);
+            memcpy(dst, srp_buf.data + srp_buf.read_offset, remaining);
 
             logger_file->WriteBlock(&pkt, sizeof(pkt));
-            offset += chunk_len;
-            remaining -= chunk_len;
         }
 
-        //gcs().send_text(MAV_SEVERITY_INFO, "SRP: logged %u bytes in %u packets", srp_buffer.received_len, packet_seq);
-
-        srp_buffer.collecting = false;
+        // Reset buffer after message ends
+        srp_buf.read_offset = srp_buf.write_offset = 0;
     }
 }
+
 
 
 /*
