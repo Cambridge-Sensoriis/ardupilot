@@ -58,7 +58,7 @@ void Copter::Log_Write_Control_Tuning()
         throttle_out        : motors->get_throttle(),
         throttle_hover      : motors->get_throttle_hover(),
         desired_alt         : des_alt_m,
-        inav_alt            : float(pos_control->get_pos_estimate_NEU_m().z),
+        inav_alt            : float(pos_control->get_pos_estimate_U_m()),
         baro_alt            : baro_alt_m,
         desired_rangefinder_alt : desired_rangefinder_alt_m,
 #if AP_RANGEFINDER_ENABLED
@@ -68,7 +68,7 @@ void Copter::Log_Write_Control_Tuning()
 #endif
         terr_alt            : terr_alt,
         target_climb_rate   : int16_t(target_climb_rate_ms * 100.0),
-        climb_rate          : int16_t(pos_control->get_vel_estimate_NEU_ms().z * 100.0) // float -> int16_t
+        climb_rate          : int16_t(pos_control->get_vel_estimate_U_ms() * 100.0) // float -> int16_t
     };
     logger.WriteBlock(&pkt, sizeof(pkt));
 }
@@ -484,7 +484,7 @@ const struct LogStructure Copter::log_structure[] = {
 // @Field: Value: Value
 
     { LOG_CONTROL_TUNING_MSG, sizeof(log_Control_Tuning),
-      "CTUN", "Qffffffefffhh", "TimeUS,ThI,ABst,ThO,ThH,DAlt,Alt,BAlt,DSAlt,SAlt,TAlt,DCRt,CRt", "s----mmmmmmnn", "F----000000BB" , true },
+      "CTUN", "Qffffffffffhh", "TimeUS,ThI,ABst,ThO,ThH,DAlt,Alt,BAlt,DSAlt,SAlt,TAlt,DCRt,CRt", "s----mmmmmmnn", "F----000000BB" , true },
     { LOG_DATA_INT16_MSG, sizeof(log_Data_Int16t),         
       "D16",   "QBh",         "TimeUS,Id,Value", "s--", "F--" },
     { LOG_DATA_UINT16_MSG, sizeof(log_Data_UInt16t),         

@@ -5,10 +5,13 @@ AP_FLAKE8_CLEAN
 
 '''
 
+from __future__ import annotations
+
 import abc
 import copy
 import errno
 import glob
+import io
 import math
 import os
 import pathlib
@@ -89,17 +92,6 @@ MAV_FRAMES_TO_TEST = [
 # get location of scripts
 testdir = os.path.dirname(os.path.realpath(__file__))
 
-# Check python version for abstract base class
-if sys.version_info[0] >= 3 and sys.version_info[1] >= 4:
-    ABC = abc.ABC
-else:
-    ABC = abc.ABCMeta('ABC', (), {})
-
-if sys.version_info[0] >= 3:
-    import io as StringIO  # srsly, we just did that.
-else:
-    import StringIO
-
 try:
     from itertools import izip as zip
 except ImportError:
@@ -114,10 +106,6 @@ class ErrorException(Exception):
 
 class AutoTestTimeoutException(ErrorException):
     pass
-
-
-if sys.version_info[0] < 3:
-    ConnectionResetError = AutoTestTimeoutException
 
 
 class WaitModeTimeout(AutoTestTimeoutException):
@@ -316,7 +304,7 @@ class Telem(object):
             return False
         return True
 
-    def do_read(self):
+    def do_read(self) -> bytes:
         try:
             data = self.port.recv(1024)
         except socket.error as e:
@@ -328,7 +316,7 @@ class Telem(object):
             self.progress("EOF")
             self.connected = False
             return bytes()
-#        self.progress("Read %u bytes" % len(data))
+        # print(f"Read {len(data)=} bytes {type(data)=}")
         return data
 
     def do_write(self, some_bytes):
@@ -779,11 +767,7 @@ class MSP_Generic(Telem):
 
     def update_read(self):
         for byte in self.do_read():
-            if sys.version_info[0] < 3:
-                c = byte[0]
-                byte = ord(c)
-            else:
-                c = chr(byte)
+            c = chr(byte)
             # print("Got (0x%02x) (%s) (%s) state=%s" % (byte, chr(byte), str(type(byte)), self.state))
             if self.state == self.STATE_IDLE:
                 # reset state
@@ -1234,9 +1218,9 @@ class FRSkyD(FRSky):
                         # try again in a little while
                         consume = 0
                         return
-                    if ord(self.buffer[1]) == 0x3E:
+                    if self.buffer[1] == 0x3E:
                         b = self.START_STOP_D
-                    elif ord(self.buffer[1]) == 0x3D:
+                    elif self.buffer[1] == 0x3D:
                         b = self.BYTESTUFF_D
                     else:
                         raise ValueError("Unknown stuffed byte")
@@ -1816,7 +1800,9 @@ class LocationInt(object):
 
 class Test(object):
     '''a test definition - information about a test'''
-    def __init__(self, function, kwargs={}, attempts=1, speedup=None):
+    def __init__(self, function, kwargs: dict | None = None, attempts=1, speedup=None):
+        if kwargs is None:
+            kwargs = {}
         self.name = function.__name__
         self.description = function.__doc__
         if self.description is None:
@@ -1862,7 +1848,7 @@ class ValgrindFailedResult(Result):
         return "Valgrind error detected"
 
 
-class TestSuite(ABC):
+class TestSuite(abc.ABC):
     """Base abstract class.
     It implements the common function for all vehicle types.
     """
@@ -1878,7 +1864,7 @@ class TestSuite(ABC):
                  gdbserver=False,
                  lldb=False,
                  strace=False,
-                 breakpoints=[],
+                 breakpoints: list | None = None,
                  disable_breakpoints=False,
                  viewerip=None,
                  use_map=False,
@@ -1886,7 +1872,7 @@ class TestSuite(ABC):
                  logs_dir=None,
                  force_ahrs_type=None,
                  replay=False,
-                 sup_binaries=[],
+                 sup_binaries: list | None = None,
                  reset_after_every_test=False,
                  force_32bit=False,
                  ubsan=False,
@@ -1894,10 +1880,16 @@ class TestSuite(ABC):
                  num_aux_imus=0,
                  dronecan_tests=False,
                  generate_junit=False,
-                 build_opts={},
+                 build_opts: dict | None = None,
                  enable_fgview=False,
-                 move_logs_on_test_failure : bool = False,
+                 move_logs_on_test_failure: bool = False,
                  ):
+        if breakpoints is None:
+            breakpoints = []
+        if sup_binaries is None:
+            sup_binaries = []
+        if build_opts is None:
+            build_opts = {}
 
         self.start_time = time.time()
 
@@ -2158,16 +2150,7 @@ class TestSuite(ABC):
         count = self.count_expected_fence_lines_in_filepath(filepath)
         mavproxy.send('fence load %s\n' % filepath)
 #        self.mavproxy.expect("Loaded %u (geo-)?fence" % count)
-        tstart = self.get_sim_time_cached()
-        while True:
-            t2 = self.get_sim_time_cached()
-            if t2 - tstart > 10:
-                raise AutoTestTimeoutException("Failed to do load")
-            newcount = self.get_parameter("FENCE_TOTAL")
-            self.progress("fence total: %u want=%u" % (newcount, count))
-            if count == newcount:
-                break
-            self.delay_sim_time(1)
+        self.wait_parameter_value("FENCE_TOTAL", count, timeout=20)
 
     def get_fence_point(self, idx, target_system=1, target_component=1):
         self.mav.mav.fence_fetch_point_send(target_system,
@@ -2554,168 +2537,7 @@ class TestSuite(ABC):
             17 # squawk
         )
 
-    def get_sim_parameter_documentation_get_whitelist(self):
-        # common parameters
-        ret = set([
-            "SIM_IMUT1_ACC1_X",
-            "SIM_IMUT1_ACC1_Y",
-            "SIM_IMUT1_ACC1_Z",
-            "SIM_IMUT1_ACC2_X",
-            "SIM_IMUT1_ACC2_Y",
-            "SIM_IMUT1_ACC2_Z",
-            "SIM_IMUT1_ACC3_X",
-            "SIM_IMUT1_ACC3_Y",
-            "SIM_IMUT1_ACC3_Z",
-            "SIM_IMUT1_ENABLE",
-            "SIM_IMUT1_GYR1_X",
-            "SIM_IMUT1_GYR1_Y",
-            "SIM_IMUT1_GYR1_Z",
-            "SIM_IMUT1_GYR2_X",
-            "SIM_IMUT1_GYR2_Y",
-            "SIM_IMUT1_GYR2_Z",
-            "SIM_IMUT1_GYR3_X",
-            "SIM_IMUT1_GYR3_Y",
-            "SIM_IMUT1_GYR3_Z",
-            "SIM_IMUT1_TMAX",
-            "SIM_IMUT1_TMIN",
-            "SIM_IMUT2_ACC1_X",
-            "SIM_IMUT2_ACC1_Y",
-            "SIM_IMUT2_ACC1_Z",
-            "SIM_IMUT2_ACC2_X",
-            "SIM_IMUT2_ACC2_Y",
-            "SIM_IMUT2_ACC2_Z",
-            "SIM_IMUT2_ACC3_X",
-            "SIM_IMUT2_ACC3_Y",
-            "SIM_IMUT2_ACC3_Z",
-            "SIM_IMUT2_ENABLE",
-            "SIM_IMUT2_GYR1_X",
-            "SIM_IMUT2_GYR1_Y",
-            "SIM_IMUT2_GYR1_Z",
-            "SIM_IMUT2_GYR2_X",
-            "SIM_IMUT2_GYR2_Y",
-            "SIM_IMUT2_GYR2_Z",
-            "SIM_IMUT2_GYR3_X",
-            "SIM_IMUT2_GYR3_Y",
-            "SIM_IMUT2_GYR3_Z",
-            "SIM_IMUT2_TMAX",
-            "SIM_IMUT2_TMIN",
-            "SIM_IMUT3_ACC1_X",
-            "SIM_IMUT3_ACC1_Y",
-            "SIM_IMUT3_ACC1_Z",
-            "SIM_IMUT3_ACC2_X",
-            "SIM_IMUT3_ACC2_Y",
-            "SIM_IMUT3_ACC2_Z",
-            "SIM_IMUT3_ACC3_X",
-            "SIM_IMUT3_ACC3_Y",
-            "SIM_IMUT3_ACC3_Z",
-            "SIM_IMUT3_ENABLE",
-            "SIM_IMUT3_GYR1_X",
-            "SIM_IMUT3_GYR1_Y",
-            "SIM_IMUT3_GYR1_Z",
-            "SIM_IMUT3_GYR2_X",
-            "SIM_IMUT3_GYR2_Y",
-            "SIM_IMUT3_GYR2_Z",
-            "SIM_IMUT3_GYR3_X",
-            "SIM_IMUT3_GYR3_Y",
-            "SIM_IMUT3_GYR3_Z",
-            "SIM_IMUT3_TMAX",
-            "SIM_IMUT3_TMIN",
-            "SIM_IMUT4_ACC1_X",
-            "SIM_IMUT4_ACC1_Y",
-            "SIM_IMUT4_ACC1_Z",
-            "SIM_IMUT4_ACC2_X",
-            "SIM_IMUT4_ACC2_Y",
-            "SIM_IMUT4_ACC2_Z",
-            "SIM_IMUT4_ACC3_X",
-            "SIM_IMUT4_ACC3_Y",
-            "SIM_IMUT4_ACC3_Z",
-            "SIM_IMUT4_ENABLE",
-            "SIM_IMUT4_GYR1_X",
-            "SIM_IMUT4_GYR1_Y",
-            "SIM_IMUT4_GYR1_Z",
-            "SIM_IMUT4_GYR2_X",
-            "SIM_IMUT4_GYR2_Y",
-            "SIM_IMUT4_GYR2_Z",
-            "SIM_IMUT4_GYR3_X",
-            "SIM_IMUT4_GYR3_Y",
-            "SIM_IMUT4_GYR3_Z",
-            "SIM_IMUT4_TMAX",
-            "SIM_IMUT4_TMIN",
-            "SIM_IMUT5_ACC1_X",
-            "SIM_IMUT5_ACC1_Y",
-            "SIM_IMUT5_ACC1_Z",
-            "SIM_IMUT5_ACC2_X",
-            "SIM_IMUT5_ACC2_Y",
-            "SIM_IMUT5_ACC2_Z",
-            "SIM_IMUT5_ACC3_X",
-            "SIM_IMUT5_ACC3_Y",
-            "SIM_IMUT5_ACC3_Z",
-            "SIM_IMUT5_ENABLE",
-            "SIM_IMUT5_GYR1_X",
-            "SIM_IMUT5_GYR1_Y",
-            "SIM_IMUT5_GYR1_Z",
-            "SIM_IMUT5_GYR2_X",
-            "SIM_IMUT5_GYR2_Y",
-            "SIM_IMUT5_GYR2_Z",
-            "SIM_IMUT5_GYR3_X",
-            "SIM_IMUT5_GYR3_Y",
-            "SIM_IMUT5_GYR3_Z",
-            "SIM_IMUT5_TMAX",
-            "SIM_IMUT5_TMIN",
-            "SIM_MAG2_DIA_X",
-            "SIM_MAG2_DIA_Y",
-            "SIM_MAG2_DIA_Z",
-            "SIM_MAG2_ODI_X",
-            "SIM_MAG2_ODI_Y",
-            "SIM_MAG2_ODI_Z",
-            "SIM_MAG2_OFS_X",
-            "SIM_MAG2_OFS_Y",
-            "SIM_MAG2_OFS_Z",
-            "SIM_MAG3_DIA_X",
-            "SIM_MAG3_DIA_Y",
-            "SIM_MAG3_DIA_Z",
-            "SIM_MAG3_ODI_X",
-            "SIM_MAG3_ODI_Y",
-            "SIM_MAG3_ODI_Z",
-            "SIM_MAG3_OFS_X",
-            "SIM_MAG3_OFS_Y",
-            "SIM_MAG3_OFS_Z",
-            "SIM_MAG_ALY_X",
-            "SIM_MAG_ALY_Y",
-            "SIM_MAG_ALY_Z",
-            "SIM_MAG1_DIA_X",
-            "SIM_MAG1_DIA_Y",
-            "SIM_MAG1_DIA_Z",
-            "SIM_MAG_MOT_X",
-            "SIM_MAG_MOT_Y",
-            "SIM_MAG_MOT_Z",
-            "SIM_MAG1_ODI_X",
-            "SIM_MAG1_ODI_Y",
-            "SIM_MAG1_ODI_Z",
-            "SIM_MAG1_OFS_X",
-            "SIM_MAG1_OFS_Y",
-            "SIM_MAG1_OFS_Z",
-            "SIM_VIB_FREQ_X",
-            "SIM_VIB_FREQ_Y",
-            "SIM_VIB_FREQ_Z",
-        ])
-
-        vinfo_key = self.vehicleinfo_key()
-        if vinfo_key == "Rover":
-            ret.update([
-            ])
-        if vinfo_key == "ArduSub":
-            ret.update([
-                "SIM_BUOYANCY",
-            ])
-
-        return ret
-
     def test_parameter_documentation_get_all_parameters(self):
-        # this is a set of SIM_parameters which we know aren't currently
-        # documented - but they really should be.  We use this whitelist
-        # to ensure any new SIM_ parameters added are documented
-        sim_parameters_missing_documentation = self.get_sim_parameter_documentation_get_whitelist()
 
         xml_filepath = os.path.join(self.buildlogs_dirpath(), "apm.pdef.xml")
         param_parse_filepath = os.path.join(self.rootdir(), 'Tools', 'autotest', 'param_metadata', 'param_parse.py')
@@ -2748,20 +2570,11 @@ class TestSuite(ABC):
 
         fail = False
         for param in parameters.keys():
-            if param.startswith("SIM_"):
-                if param in sim_parameters_missing_documentation:
-                    if param in htree:
-                        self.progress("%s is in both XML and whitelist; remove it from the whitelist" % param)
-                        fail = True
-                    # hopefully these get documented sometime....
-                    continue
             if param not in htree:
                 self.progress("%s not in XML" % param)
                 fail = True
         if fail:
             raise NotAchievedException("Downloaded parameters missing in XML")
-
-        self.progress("There are %u SIM_ parameters left to document" % len(sim_parameters_missing_documentation))
 
         # FIXME: this should be doable if we filter out e.g BRD_* and CAN_*?
 #        self.progress("Checking no extra parameters present in XML")
@@ -3331,7 +3144,16 @@ class TestSuite(ABC):
         '''temporarily stop the SITL process from running.  Note that
         simulation time will not move forward!'''
         # self.progress("Pausing SITL")
-        self.sitl.kill(signal.SIGSTOP)
+        if sys.platform == 'cygwin':
+            # Maintain original behaviour under cygwin as SIGTSTP has not been tested
+            self.sitl.kill(signal.SIGSTOP)
+
+        else:
+            # SIGTSTP can be ignored by GDB allowing easier debugging rather than having GDB break at every pause
+            # EG add:
+            # handle SIGTSTP nostop noprint pass
+            # handle SIGCONT nostop noprint pass
+            self.sitl.kill(signal.SIGTSTP)
 
     def unpause_SITL(self):
         # self.progress("Unpausing SITL")
@@ -3455,7 +3277,7 @@ class TestSuite(ABC):
     class FailFastStatusText(MessageHook):
         '''watches STATUSTEXT message; any message matching passed-in
         patterns causes a NotAchievedException to be thrown'''
-        def __init__(self, suite, texts, regex : bool = False):
+        def __init__(self, suite, texts, regex: bool = False):
             super(TestSuite.FailFastStatusText, self).__init__(suite)
             if isinstance(texts, str):
                 texts = [texts]
@@ -4378,7 +4200,8 @@ class TestSuite(ABC):
                 frame = mavutil.mavlink.MAV_FRAME_GLOBAL
             if opts.get('frame', None) is not None:
                 frame = opts.get('frame')
-            ret.append(self.create_MISSION_ITEM_INT(t, seq=seq, frame=frame, x=int(lat*1e7), y=int(lng*1e7), z=alt))
+            p1 = opts.get('p1', 0)  # should we pass `None` instead?
+            ret.append(self.create_MISSION_ITEM_INT(t, seq=seq, frame=frame, p1=p1, x=int(lat*1e7), y=int(lng*1e7), z=alt))
             seq += 1
 
         return ret
@@ -4397,6 +4220,33 @@ class TestSuite(ABC):
             target_system=target_system,
             target_component=target_component)
         self.check_mission_upload_download(mission)
+
+    def start_flying_simple_relhome_mission(self, items):
+        '''uploads items, changes mode to auto, waits ready to arm and arms
+        vehicle.  If the first item it a takeoff you can expect the
+        vehicle to fly after this method returns.  On Copter AUTO_OPTIONS
+        should be 3.
+        '''
+
+        self.upload_simple_relhome_mission(items)
+        self.set_current_waypoint(0, check_afterwards=False)
+
+        self.change_mode('AUTO')
+        self.wait_ready_to_arm()
+
+        self.arm_vehicle()
+        # copter gets stuck in auto; if you run a mission to
+        # completion then the mission state machine ends up in a
+        # "done" state and you can't restart by just setting an
+        # earlier waypoint:
+        self.send_cmd(mavutil.mavlink.MAV_CMD_MISSION_START)
+
+    def fly_simple_relhome_mission(self, items):
+        '''uploads items, changes mode to auto, waits ready to arm and arms
+        vehicle.  Then waits for the vehicle to disarm.
+        '''
+        self.start_flying_simple_relhome_mission(items)
+        self.wait_disarmed()
 
     def get_mission_count(self):
         return self.get_parameter("MIS_TOTAL")
@@ -6329,13 +6179,13 @@ class TestSuite(ABC):
             return True
         return False
 
-    def set_parameter_bit(self, name : str, bit_offset : int) -> None:
+    def set_parameter_bit(self, name: str, bit_offset: int) -> None:
         '''set bit in parameter to true, preserving values of other bits'''
         value = int(self.get_parameter(name))
         value |= 1 << bit_offset
         self.set_parameter(name, value)
 
-    def clear_parameter_bit(self, name : str, bit_offset : int) -> None:
+    def clear_parameter_bit(self, name: str, bit_offset: int) -> None:
         '''set bit in parameter to true, preserving values of other bits'''
         value = int(self.get_parameter(name))
         value &= ~(1 << bit_offset)
@@ -7414,11 +7264,12 @@ class TestSuite(ABC):
                                        (quality, m.signal_quality))
 
     def get_rangefinder_distance(self):
-        m = self.assert_receive_message('RANGEFINDER', timeout=5)
-        return m.distance
+        '''returns current rangefinder distance in metres'''
+        m = self.assert_receive_message('DISTANCE_SENSOR', timeout=5)
+        return m.current_distance * 0.01
 
     def wait_rangefinder_distance(self, dist_min, dist_max, timeout=30, **kwargs):
-        '''wait for RANGEFINDER distance'''
+        '''wait for DISTANCE_SENSOR distance in metres'''
         def validator(value2, target2=None):
             if dist_min <= value2 <= dist_max:
                 return True
@@ -7426,7 +7277,7 @@ class TestSuite(ABC):
                 return False
 
         self.wait_and_maintain(
-            value_name="RageFinderDistance",
+            value_name="RangeFinderDistance",
             target=dist_min,
             current_value_getter=lambda: self.get_rangefinder_distance(),
             accuracy=(dist_max - dist_min),
@@ -7720,7 +7571,9 @@ class TestSuite(ABC):
                                   (target, last_value))
                     last_fail_print = now
 
-    def validate_kwargs(self, kwargs, valid={}):
+    def validate_kwargs(self, kwargs, valid: dict | None = None):
+        if valid is None:
+            valid = {}
         for key in kwargs:
             if key not in valid:
                 raise NotAchievedException("Invalid kwarg %s" % str(key))
@@ -8554,8 +8407,11 @@ class TestSuite(ABC):
     def assert_prearm_failure(self,
                               expected_statustext,
                               timeout=5,
-                              ignore_prearm_failures=[],
+                              ignore_prearm_failures: list | None = None,
                               other_prearm_failures_fatal=True):
+        if ignore_prearm_failures is None:
+            ignore_prearm_failures = []
+
         seen_statustext = False
         seen_command_ack = False
 
@@ -8594,7 +8450,9 @@ class TestSuite(ABC):
             if self.mav.motors_armed():
                 raise NotAchievedException("Armed when we shouldn't have")
 
-    def assert_arm_failure(self, expected_statustext, timeout=5, ignore_prearm_failures=[]):
+    def assert_arm_failure(self, expected_statustext, timeout=5, ignore_prearm_failures: list = None):
+        if ignore_prearm_failures is None:
+            ignore_prearm_failures = []
         seen_statustext = False
         seen_command_ack = False
 
@@ -8970,25 +8828,21 @@ Also, ignores heartbeats not from our target system'''
         return ''.join(traceback.format_stack())
 
     def get_exception_stacktrace(self, e):
-        if sys.version_info[0] >= 3:
-            ret = "%s\n" % e
-            ret += ''.join(traceback.format_exception(type(e),
-                                                      e,
-                                                      tb=e.__traceback__))
-            return ret
-
-        # Python2:
-        return traceback.format_exc(e)
+        ret = "%s\n" % e
+        ret += ''.join(traceback.format_exception(type(e),
+                                                  e,
+                                                  tb=e.__traceback__))
+        return ret
 
     def bin_logs(self):
         return glob.glob("logs/*.BIN")
 
     def remove_bin_logs(self):
-        util.run_cmd('/bin/rm -f logs/*.BIN logs/LASTLOG.TXT')
+        util.run_cmd('rm -f logs/*.BIN logs/LASTLOG.TXT')
 
     def remove_ardupilot_terrain_cache(self):
         '''removes the terrain files ArduPilot keeps in its onboiard storage'''
-        util.run_cmd('/bin/rm -f %s' % util.reltopdir("terrain/*.DAT"))
+        util.run_cmd('rm -f %s' % util.reltopdir("terrain/*.DAT"))
 
     def check_logs(self, name):
         '''called to move relevant log files from our working directory to the
@@ -9606,7 +9460,7 @@ Also, ignores heartbeats not from our target system'''
     def dump_message_verbose(self, m):
         '''return verbose dump of m.  Wraps the pymavlink routine which
         inconveniently takes a filehandle'''
-        f = StringIO.StringIO()
+        f = io.StringIO()
         mavutil.dump_message_verbose(f, m)
         return f.getvalue()
 
@@ -10272,106 +10126,119 @@ Also, ignores heartbeats not from our target system'''
 
     def CompassReordering(self):
         '''Test Compass reordering when priorities are changed'''
-        self.context_push()
-        ex = None
-        try:
-            originals = {
-                "COMPASS_OFS_X": 1.1,
-                "COMPASS_OFS_Y": 1.2,
-                "COMPASS_OFS_Z": 1.3,
-                "COMPASS_DIA_X": 1.4,
-                "COMPASS_DIA_Y": 1.5,
-                "COMPASS_DIA_Z": 1.6,
-                "COMPASS_ODI_X": 1.7,
-                "COMPASS_ODI_Y": 1.8,
-                "COMPASS_ODI_Z": 1.9,
-                "COMPASS_MOT_X": 1.91,
-                "COMPASS_MOT_Y": 1.92,
-                "COMPASS_MOT_Z": 1.93,
-                "COMPASS_SCALE": 1.94,
-                "COMPASS_ORIENT": 1,
-                "COMPASS_EXTERNAL": 2,
+        originals = {
+            "COMPASS_OFS_X": 1.1,
+            "COMPASS_OFS_Y": 1.2,
+            "COMPASS_OFS_Z": 1.3,
+            "COMPASS_DIA_X": 1.4,
+            "COMPASS_DIA_Y": 1.5,
+            "COMPASS_DIA_Z": 1.6,
+            "COMPASS_ODI_X": 1.7,
+            "COMPASS_ODI_Y": 1.8,
+            "COMPASS_ODI_Z": 1.9,
+            "COMPASS_MOT_X": 1.91,
+            "COMPASS_MOT_Y": 1.92,
+            "COMPASS_MOT_Z": 1.93,
+            "COMPASS_SCALE": 1.94,
+            "COMPASS_ORIENT": 1,
+            "COMPASS_EXTERNAL": 2,
 
-                "COMPASS_OFS2_X": 2.1,
-                "COMPASS_OFS2_Y": 2.2,
-                "COMPASS_OFS2_Z": 2.3,
-                "COMPASS_DIA2_X": 2.4,
-                "COMPASS_DIA2_Y": 2.5,
-                "COMPASS_DIA2_Z": 2.6,
-                "COMPASS_ODI2_X": 2.7,
-                "COMPASS_ODI2_Y": 2.8,
-                "COMPASS_ODI2_Z": 2.9,
-                "COMPASS_MOT2_X": 2.91,
-                "COMPASS_MOT2_Y": 2.92,
-                "COMPASS_MOT2_Z": 2.93,
-                "COMPASS_SCALE2": 2.94,
-                "COMPASS_ORIENT2": 3,
-                "COMPASS_EXTERN2": 4,
+            "COMPASS_OFS2_X": 2.1,
+            "COMPASS_OFS2_Y": 2.2,
+            "COMPASS_OFS2_Z": 2.3,
+            "COMPASS_DIA2_X": 2.4,
+            "COMPASS_DIA2_Y": 2.5,
+            "COMPASS_DIA2_Z": 2.6,
+            "COMPASS_ODI2_X": 2.7,
+            "COMPASS_ODI2_Y": 2.8,
+            "COMPASS_ODI2_Z": 2.9,
+            "COMPASS_MOT2_X": 2.91,
+            "COMPASS_MOT2_Y": 2.92,
+            "COMPASS_MOT2_Z": 2.93,
+            "COMPASS_SCALE2": 2.94,
+            "COMPASS_ORIENT2": 3,
+            "COMPASS_EXTERN2": 4,
 
-                "COMPASS_OFS3_X": 3.1,
-                "COMPASS_OFS3_Y": 3.2,
-                "COMPASS_OFS3_Z": 3.3,
-                "COMPASS_DIA3_X": 3.4,
-                "COMPASS_DIA3_Y": 3.5,
-                "COMPASS_DIA3_Z": 3.6,
-                "COMPASS_ODI3_X": 3.7,
-                "COMPASS_ODI3_Y": 3.8,
-                "COMPASS_ODI3_Z": 3.9,
-                "COMPASS_MOT3_X": 3.91,
-                "COMPASS_MOT3_Y": 3.92,
-                "COMPASS_MOT3_Z": 3.93,
-                "COMPASS_SCALE3": 3.94,
-                "COMPASS_ORIENT3": 5,
-                "COMPASS_EXTERN3": 6,
-            }
+            "COMPASS_OFS3_X": 3.1,
+            "COMPASS_OFS3_Y": 3.2,
+            "COMPASS_OFS3_Z": 3.3,
+            "COMPASS_DIA3_X": 3.4,
+            "COMPASS_DIA3_Y": 3.5,
+            "COMPASS_DIA3_Z": 3.6,
+            "COMPASS_ODI3_X": 3.7,
+            "COMPASS_ODI3_Y": 3.8,
+            "COMPASS_ODI3_Z": 3.9,
+            "COMPASS_MOT3_X": 3.91,
+            "COMPASS_MOT3_Y": 3.92,
+            "COMPASS_MOT3_Z": 3.93,
+            "COMPASS_SCALE3": 3.94,
+            "COMPASS_ORIENT3": 5,
+            "COMPASS_EXTERN3": 6,
+        }
 
-            # quick sanity check to ensure all values are unique:
-            if len(originals.values()) != len(set(originals.values())):
-                raise NotAchievedException("Values are not all unique!")
+        # quick sanity check to ensure all values are unique:
+        if len(originals.values()) != len(set(originals.values())):
+            raise NotAchievedException("Values are not all unique!")
 
-            self.progress("Setting parameters")
-            self.set_parameters(originals)
+        self.progress("Setting parameters")
+        self.set_parameters(originals)
 
-            self.reboot_sitl()
-
-            # no transforms means our originals should be our finals:
-            self.test_mag_reordering_assert_mag_transform(originals, [])
-
-            self.start_subtest("Pushing 1st mag to 3rd")
-            ey = None
-            self.context_push()
-            try:
-                # now try reprioritising compass 1 to be higher than compass 0:
-                prio1_id = self.get_parameter("COMPASS_PRIO1_ID")
-                prio2_id = self.get_parameter("COMPASS_PRIO2_ID")
-                prio3_id = self.get_parameter("COMPASS_PRIO3_ID")
-                self.set_parameter("COMPASS_PRIO1_ID", prio2_id)
-                self.set_parameter("COMPASS_PRIO2_ID", prio3_id)
-                self.set_parameter("COMPASS_PRIO3_ID", prio1_id)
-
-                self.reboot_sitl()
-
-                self.test_mag_reordering_assert_mag_transform(originals, [(2, 1),
-                                                                          (3, 2),
-                                                                          (1, 3)])
-
-            except Exception as e:
-                self.progress("Caught exception: %s" %
-                              self.get_exception_stacktrace(e))
-                ey = e
-            self.context_pop()
-            self.reboot_sitl()
-            if ey is not None:
-                raise ey
-
-        except Exception as e:
-            self.progress("Caught exception: %s" %
-                          self.get_exception_stacktrace(e))
-            ex = e
-        self.context_pop()
         self.reboot_sitl()
-        if ex is not None:
-            raise ex
+
+        # no transforms means our originals should be our finals:
+        self.test_mag_reordering_assert_mag_transform(originals, [])
+
+        self.start_subtest("Pushing 1st mag to 3rd")
+        self.context_push()
+        # now try reprioritising compass 1 to be higher than compass 0:
+        prio1_id = self.get_parameter("COMPASS_PRIO1_ID")
+        prio2_id = self.get_parameter("COMPASS_PRIO2_ID")
+        prio3_id = self.get_parameter("COMPASS_PRIO3_ID")
+        self.set_parameters({
+            "COMPASS_PRIO1_ID": prio2_id,
+            "COMPASS_PRIO2_ID": prio3_id,
+            "COMPASS_PRIO3_ID": prio1_id,
+        })
+
+        self.reboot_sitl()
+
+        self.test_mag_reordering_assert_mag_transform(originals, [
+            (2, 1),
+            (3, 2),
+            (1, 3),
+        ])
+
+        self.progress("Setting priorities back to original order")
+        self.set_parameters({
+            "COMPASS_PRIO1_ID": prio1_id,
+            "COMPASS_PRIO2_ID": prio2_id,
+            "COMPASS_PRIO3_ID": prio3_id,
+        })
+
+        self.reboot_sitl()
+
+        self.test_mag_reordering_assert_mag_transform(originals, [
+            (1, 1),
+            (2, 2),
+            (3, 3),
+        ])
+
+        self.progress("And reverse ordering")
+        self.set_parameters({
+            "COMPASS_PRIO1_ID": prio3_id,
+            "COMPASS_PRIO2_ID": prio2_id,
+            "COMPASS_PRIO3_ID": prio1_id,
+        })
+
+        self.reboot_sitl()
+
+        self.test_mag_reordering_assert_mag_transform(originals, [
+            (1, 3),
+            (2, 2),
+            (3, 1),
+        ])
+
+        self.context_pop()
 
     # something about SITLCompassCalibration appears to fail
     # this one, so we put it first:
@@ -10609,7 +10476,7 @@ Also, ignores heartbeats not from our target system'''
         class Capturing(list):
             def __enter__(self):
                 self._stderr = sys.stderr
-                sys.stderr = self._stringio = StringIO.StringIO()
+                sys.stderr = self._stringio = io.StringIO()
                 return self
 
             def __exit__(self, *args):
@@ -11697,7 +11564,7 @@ Also, ignores heartbeats not from our target system'''
                 0,  # yawrate
             )
 
-        def testpos(self, targetpos : mavutil.location, test_alt : bool, frame_name : str, frame):
+        def testpos(self, targetpos: mavutil.location, test_alt: bool, frame_name: str, frame):
             send_target_position(targetpos.lat, targetpos.lng, to_alt_frame(targetpos.alt, frame_name), frame)
             self.wait_location(
                 targetpos,
@@ -14886,6 +14753,58 @@ SERIAL5_BAUD 128
             self.create_junit_report(step_name, results, skip_list)
 
         return len(self.fail_list) == 0
+
+    def wait_circling_point_with_radius(self, loc, want_radius, epsilon=5.0, min_circle_time=5, timeout=120, track_angle=True):
+        on_radius_start_heading = None
+        average_radius = 0.0
+        done_time = False
+        done_angle = False
+        tstart = self.get_sim_time()
+        circle_time_start = tstart
+        while True:
+            now = self.get_sim_time()
+            if now - tstart > timeout:
+                raise AutoTestTimeoutException("Did not get onto circle")
+            here = self.mav.location()
+            got_radius = self.get_distance(loc, here)
+            average_radius = 0.95*average_radius + 0.05*got_radius
+            on_radius = abs(got_radius - want_radius) < epsilon
+            m = self.assert_receive_message('VFR_HUD')
+            heading = m.heading
+            on_string = "off"
+            got_angle = ""
+            if on_radius_start_heading is not None:
+                got_angle = "%0.2f" % abs(on_radius_start_heading - heading) # FIXME
+                on_string = "on"
+
+            want_angle = 180 # we don't actually get this (angle-substraction issue.  But we get enough...
+            got_circle_time = self.get_sim_time() - circle_time_start
+            bits = [
+                f"wait-circling: got-r={got_radius:.2f} want-r={want_radius}",
+                f"avg-r={average_radius} {on_string}",
+                f"t={got_circle_time:0.2f}/{min_circle_time}",
+            ]
+            if track_angle:
+                bits.append(f"want-a={want_angle:0.1f} got-a={got_angle}")
+
+            self.progress(" ".join(bits))
+            if on_radius:
+                if on_radius_start_heading is None:
+                    on_radius_start_heading = heading
+                    average_radius = got_radius
+                    circle_time_start = now
+                    continue
+                if abs(on_radius_start_heading - heading) > want_angle: # FIXME
+                    done_angle = True
+                if got_circle_time > min_circle_time:
+                    done_time = True
+                if not track_angle:
+                    done_angle = True
+                if done_time and done_angle:
+                    return
+                continue
+            on_radius_start_heading = None
+            circle_time_start = now
 
     def create_junit_report(self, test_name: str, results: List[Result], skip_list: List[Tuple[Test, Dict[str, str]]]) -> None:
         """Generate Junit report from the autotest results"""

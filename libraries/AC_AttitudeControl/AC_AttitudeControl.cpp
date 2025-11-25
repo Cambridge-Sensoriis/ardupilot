@@ -1081,6 +1081,17 @@ void AC_AttitudeControl::input_shaping_rate_predictor(const Vector2f &error_angl
     target_ang_vel_rads.y = ang_vel_rads.y;
 }
 
+// scale I to represent the current angle P
+void AC_AttitudeControl::scale_I_to_angle_P()
+{
+    Vector3f i_scale{
+        _p_angle_roll.kP() * _angle_P_scale.x,
+        _p_angle_pitch.kP() * _angle_P_scale.y,
+        _p_angle_yaw.kP() * _angle_P_scale.z
+    };
+    set_I_scale_mult(i_scale);
+}
+
 // limits angular velocity
 void AC_AttitudeControl::ang_vel_limit(Vector3f& euler_rad, float ang_vel_roll_max_rads, float ang_vel_pitch_max_rads, float ang_vel_yaw_max_rads) const
 {
@@ -1240,10 +1251,6 @@ Vector3f AC_AttitudeControl::update_ang_vel_target_from_att_error(const Vector3f
     } else {
         rate_target_ang_vel.z = angleP_yaw * attitude_error_rot_vec_rad.z;
     }
-
-    // reset angle P scaling, saving used value
-    _angle_P_scale_used = _angle_P_scale;
-    _angle_P_scale = VECTORF_111;
 
     return rate_target_ang_vel;
 }

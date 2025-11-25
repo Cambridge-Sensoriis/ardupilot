@@ -324,6 +324,8 @@ AP_HW_X-MAV-AP-H743R1                1203
 AP_HW_ORQAH7QUADCORE                 1204
 AP_HW_ESP32_PERIPH                   1205
 AP_HW_ESP32S3_PERIPH                 1206
+AP_HW_NUCLEO_H753ZI                  1207
+AP_HW_DAKEFPVH743_SLIM               1208
 
 AP_HW_CSKY-PMU                       1212
 
@@ -331,6 +333,7 @@ AP_HW_MUPilot                        1222
 
 # IDs 1231-1240 reserved for YARI Robotics
 AP_HW_YARIV6X                        1234
+AP_HW_YARI_GNSS                      1235
 
 AP_HW_CBUnmanned-CM405-FC            1301
 
@@ -403,6 +406,8 @@ AP_HW_BOTWINGF405                    2501
 
 AP_HW_SakuraRC-H743                  2714
 
+AP_HW_SkyRukh_Surge_H7               2815
+
 # IDs 4000-4009 reserved for Karshak Drones
 AP_HW_KRSHKF7_MINI                   4000
 
@@ -454,6 +459,7 @@ AP_HW_TBS_LUCID_H7                   5250
 AP_HW_TBS_LUCID_PRO                  5251
 AP_HW_TBS_L431_PERIPH                5252
 AP_HW_TBS_LUCID_H7_WING              5253
+AP_HW_TBS_LUCID_H7_WING_AIO          5254
 
 # IDs 5270-5279 reserved for SpeedyBee
 AP_HW_SpeedyBeeF405WINGV2            5270
