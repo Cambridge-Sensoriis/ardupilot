@@ -190,6 +190,22 @@ const AP_Param::GroupInfo AC_PrecLand::var_info[] = {
     // @RebootRequired: True
     AP_GROUPINFO_FRAME("ORIENT", 18, AC_PrecLand, _orient, AC_PRECLAND_ORIENT_DEFAULT, AP_PARAM_FRAME_ROVER | AP_PARAM_FRAME_COPTER | AP_PARAM_FRAME_TRICOPTER | AP_PARAM_FRAME_HELI), 
 
+    // @Param: XY_NSE_BASE
+    // @DisplayName: Kalman Filter Base XY Noise
+    // @Description: Kalman Filter Minimum lateral position noise. Sets the lowest allowed XY noise at low altitude
+    // @Units: m
+    // @Range: 0.0001 2.5
+    // @User: Advanced
+    AP_GROUPINFO("XY_NSE_BASE", 19, AC_PrecLand, _xy_pos_nse_base, 0.02f),
+
+    // @Param: XY_NSE_GROWTH
+    // @DisplayName: Kalman Filter XY Noise Growth
+    // @Description: Kalman Filter XY Position Noise gradient, XY Noise increases linearly with z height above target
+    // @Units: m/m
+    // @Range: 0 - 0.05
+    // @User: Advanced
+    AP_GROUPINFO("XY_NSE_GRAD", 20, AC_PrecLand, _xy_pos_nse_grad, 0.01f),
+
     AP_GROUPEND
 };
 
@@ -551,7 +567,7 @@ void AC_PrecLand::run_estimator(float rangefinder_alt_m, bool rangefinder_alt_va
 
             // Update if a new Line-Of-Sight measurement is available
             if (construct_pos_meas_using_rangefinder(rangefinder_alt_m, rangefinder_alt_valid)) {
-                float xy_pos_var = sq(_target_pos_rel_meas_ned_m.z*(0.01f + 0.01f*AP::ahrs().get_gyro().length()) + 0.02f);
+                float xy_pos_var = sq(_target_pos_rel_meas_ned_m.z*(_xy_pos_nse_grad + 0.01f*AP::ahrs().get_gyro().length()) + _xy_pos_nse_base);
                 if (!_estimator_initialized) {
                     // Inform the user landing target has been found
                     GCS_SEND_TEXT(MAV_SEVERITY_INFO, "PrecLand: Target Found");
