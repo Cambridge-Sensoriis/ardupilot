@@ -649,6 +649,17 @@ struct PACKED log_SRPRAW {
   int16_t data2[32];
   int16_t data3[32];
 };
+struct PACKED log_DEBUG_FLOAT_ARRAY {
+  LOG_PACKET_HEADER;
+  uint64_t time_us;
+  uint16_t array_id;
+  float dataA64[16];
+  float dataB64[16];
+  float dataC64[16];
+  float dataD16[4];
+  float dataE16[4];
+  float dataF16[4];
+};
 
 
 // FMT messages define all message formats other than FMT
@@ -1271,7 +1282,9 @@ LOG_STRUCTURE_FROM_AIS \
     { LOG_MOTBATT_MSG, sizeof(log_MotBatt), \
       "MOTB", "QfffffB",  "TimeUS,LiftMax,BatVolt,ThLimit,ThrAvMx,ThrOut,FailFlags", "s------", "F------" , true }, \
     { LOG_SRPRAW_MSG, sizeof(log_SRPRAW), \
-      "SRP", "QHBaaa", "TimeUS,Sequence,Length,Data1,Data2,Data3", "s----", "F----", true }
+      "SRP", "QHBaaa", "TimeUS,Sequence,Length,Data1,Data2,Data3", "s----", "F----", true }, \
+    { LOG_DEBUG_FLOAT_ARRAY_MSG, sizeof(log_DEBUG_FLOAT_ARRAY), \
+      "DEBUG", "QHZZZNNN", "TimeUS,ArrayID,DataA64,DataB64,DataC64,DataD16,DataE16,DataF16", "s-------", "F-------", true }
 
 
 // message types 0 to 31 reserved for vehicle-specific use
@@ -1361,6 +1374,7 @@ enum LogMessages : uint8_t {
     LOG_IDS_FROM_FENCE,
     LOG_SRPRAW_MSG,
     LOG_IDS_FROM_HAL,
+    LOG_DEBUG_FLOAT_ARRAY_MSG,
 
     _LOG_LAST_MSG_
 };
