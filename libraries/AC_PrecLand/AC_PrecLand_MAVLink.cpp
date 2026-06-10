@@ -5,6 +5,7 @@
 #include "AC_PrecLand_MAVLink.h"
 #include <AP_HAL/AP_HAL.h>
 #include <GCS_MAVLink/GCS.h>
+#include <cmath>
 
 // perform any required initialisation of backend
 void AC_PrecLand_MAVLink::init()
@@ -49,6 +50,30 @@ void AC_PrecLand_MAVLink::handle_msg(const mavlink_landing_target_t &packet, uin
     _distance_to_target = MAX(0, packet.distance);
     _los_meas.time_ms = timestamp_ms;
     _los_meas.valid = true;
+
+    // extract target orientation if provided (quaternion q[]) and compute yaw
+    // MAVLink q is expected as [w, x, y, z]
+    bool have_q = false;
+    const float Q_EPS = 1e-6f;
+    for (uint8_t i = 0; i < 4; i++) {
+        // treat near-zero entries as absence of quaternion
+        if (fabsf(packet.q[i]) > Q_EPS) {
+            have_q = true;
+            break;
+        }
+    }
+    if (have_q) {
+        const float qw = packet.q[0];
+        const float qx = packet.q[1];
+        const float qy = packet.q[2];
+        const float qz = packet.q[3];
+        // yaw (heading) from quaternion (assuming NED/body convention)
+        const float yaw = atan2f(2.0f*(qw*qz + qx*qy), 1.0f - 2.0f*(qy*qy + qz*qz));
+        _target_yaw_rad = yaw;
+        _target_yaw_valid = true;
+    } else {
+        _target_yaw_valid = false;
+    }
 }
 
 #endif // AC_PRECLAND_MAVLINK_ENABLED

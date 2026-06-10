@@ -60,6 +60,19 @@ protected:
         bool valid;         // true if there is a valid measurement from the sensor
     } _los_meas;
     float               _distance_to_target;    // distance from the sensor to landing target in meters
+    // optional yaw of the landing target in radians (from companion computer)
+    float               _target_yaw_rad = 0.0f;
+    bool                _target_yaw_valid = false;
+
+public:
+    // return true and set ret to the target yaw radians if available
+    virtual bool get_target_yaw_rad(float &ret) const {
+        if (!_target_yaw_valid) {
+            return false;
+        }
+        ret = _target_yaw_rad;
+        return true;
+    }
 };
 
 #endif // AC_PRECLAND_ENABLED

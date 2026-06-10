@@ -129,6 +129,9 @@ public:
     */
     bool get_target_velocity(Vector2f& ret);
 
+        // return the yaw (heading) of the detected target in radians if provided by backend
+        bool get_target_yaw_rad(float &ret) const;
+
     // parameter var table
     static const struct AP_Param::GroupInfo var_info[];
 

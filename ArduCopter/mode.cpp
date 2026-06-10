@@ -837,6 +837,15 @@ void Mode::land_run_horizontal_control()
     pos_control->NE_update_controller();
     Vector3f thrust_vector = pos_control->get_thrust_vector();
 
+    // if doing precision landing and target provides an orientation, lock yaw to target
+    if (copter.ap.prec_land_active) {
+        float target_yaw_rad = 0.0f;
+        if (copter.precland.get_target_yaw_rad(target_yaw_rad)) {
+            auto_yaw.set_fixed_yaw_rad(target_yaw_rad, 0.0f, 1, false);
+            auto_yaw.set_mode(AutoYaw::Mode::FIXED);
+        }
+    }
+
     // call attitude controller
     attitude_control->input_thrust_vector_heading(thrust_vector, auto_yaw.get_heading());
 
