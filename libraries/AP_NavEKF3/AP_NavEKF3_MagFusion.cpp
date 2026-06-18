@@ -790,37 +790,13 @@ void NavEKF3_core::FuseMagnetometer()
                 KHP[i][j] = res;
             }
         }
-        // Check that we are not going to drive any variances negative and skip the update if so
-        bool healthyFusion = true;
-        for (uint8_t i= 0; i<=stateIndexLim; i++) {
-            if (KHP[i][i] > P[i][i]) {
-                healthyFusion = false;
-            }
-        }
-        if (healthyFusion) {
-            // update the covariance matrix
-            for (uint8_t i= 0; i<=stateIndexLim; i++) {
-                for (uint8_t j= 0; j<=stateIndexLim; j++) {
-                    P[i][j] = P[i][j] - KHP[i][j];
-                }
-            }
 
-            // force the covariance matrix to be symmetrical and limit the variances to prevent ill-conditioning.
-            ForceSymmetry();
-            ConstrainVariances();
-
-            // correct the state vector
-            for (uint8_t j= 0; j<=stateIndexLim; j++) {
-                statesArray[j] = statesArray[j] - Kfusion[j] * innovMag[obsIndex];
-            }
-
+        // finish fusion from KHP and Kfusion
+        if (!FinishFusion(innovMag[obsIndex])) { // no fault?
             // add table constraint here for faster convergence
             if (have_table_earth_field && frontend->_mag_ef_limit > 0) {
                 MagTableConstrain();
             }
-
-            stateStruct.quat.normalize();
-
         } else {
             // record bad axis
             if (obsIndex == 0) {
@@ -1136,38 +1112,10 @@ bool NavEKF3_core::fuseEulerYaw(yawFusionMethod method)
         }
     }
 
-    // Check that we are not going to drive any variances negative and skip the update if so
-    bool healthyFusion = true;
-    for (uint8_t i= 0; i<=stateIndexLim; i++) {
-        if (KHP[i][i] > P[i][i]) {
-            healthyFusion = false;
-        }
-    }
-    if (healthyFusion) {
-        // update the covariance matrix
-        for (uint8_t i= 0; i<=stateIndexLim; i++) {
-            for (uint8_t j= 0; j<=stateIndexLim; j++) {
-                P[i][j] = P[i][j] - KHP[i][j];
-            }
-        }
+    const ftype innovFusion = constrain_ftype(innovYaw, -0.5f, 0.5f);
+    // finish fusion from KHP and Kfusion then record health status
+    faultStatus.bad_yaw = FinishFusion(innovFusion);
 
-        // force the covariance matrix to be symmetrical and limit the variances to prevent ill-conditioning.
-        ForceSymmetry();
-        ConstrainVariances();
-
-        // correct the state vector
-        for (uint8_t i=0; i<=stateIndexLim; i++) {
-            statesArray[i] -= Kfusion[i] * constrain_ftype(innovYaw, -0.5f, 0.5f);
-        }
-        stateStruct.quat.normalize();
-
-        // record fusion numerical health status
-        faultStatus.bad_yaw = false;
-
-    } else {
-        // record fusion numerical health status
-        faultStatus.bad_yaw = true;
-    }
     return true;
 }
 
@@ -1270,38 +1218,8 @@ void NavEKF3_core::FuseDeclination(ftype declErr)
         }
     }
 
-    // Check that we are not going to drive any variances negative and skip the update if so
-    bool healthyFusion = true;
-    for (uint8_t i= 0; i<=stateIndexLim; i++) {
-        if (KHP[i][i] > P[i][i]) {
-            healthyFusion = false;
-        }
-    }
-
-    if (healthyFusion) {
-        // update the covariance matrix
-        for (uint8_t i= 0; i<=stateIndexLim; i++) {
-            for (uint8_t j= 0; j<=stateIndexLim; j++) {
-                P[i][j] = P[i][j] - KHP[i][j];
-            }
-        }
-
-        // force the covariance matrix to be symmetrical and limit the variances to prevent ill-conditioning.
-        ForceSymmetry();
-        ConstrainVariances();
-
-        // correct the state vector
-        for (uint8_t j= 0; j<=stateIndexLim; j++) {
-            statesArray[j] = statesArray[j] - Kfusion[j] * innovation;
-        }
-        stateStruct.quat.normalize();
-
-        // record fusion health status
-        faultStatus.bad_decl = false;
-    } else {
-        // record fusion health status
-        faultStatus.bad_decl = true;
-    }
+    // finish fusion from KHP and Kfusion then record health status
+    faultStatus.bad_decl = FinishFusion(innovation);
 }
 
 /********************************************************
@@ -1329,8 +1247,7 @@ void NavEKF3_core::alignMagStateDeclination()
         // zero the corresponding state covariances if magnetic field state learning is active
         ftype var_16 = P[16][16];
         ftype var_17 = P[17][17];
-        zeroRows(P,16,17);
-        zeroCols(P,16,17);
+        zeroStatesVarCov(16, 17);
         P[16][16] = var_16;
         P[17][17] = var_17;
 

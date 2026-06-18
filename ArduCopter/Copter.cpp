@@ -170,7 +170,7 @@ const AP_Scheduler::Task Copter::scheduler_tasks[] = {
     SCHED_TASK(read_rangefinder,      20,    100,  33),
 #endif
 #if HAL_PROXIMITY_ENABLED
-    SCHED_TASK_CLASS(AP_Proximity,         &copter.g2.proximity,        update,         200,  50,  36),
+    SCHED_TASK_CLASS(AP_Proximity,         &copter.g2.proximity,        update,         200, 200,  36),
 #endif
 #if AP_BEACON_ENABLED
     SCHED_TASK_CLASS(AP_Beacon,            &copter.g2.beacon,           update,         400,  50,  39),
@@ -941,6 +941,13 @@ void Copter::update_altitude()
 }
 
 // vehicle specific waypoint info helpers
+#if AP_MOUNT_ROI_WPNEXT_OFFSET_ENABLED
+bool Copter::get_wp_location(Location &loc) const
+{
+    return flightmode->get_wp(loc);
+}
+#endif  // AP_MOUNT_ROI_WPNEXT_OFFSET_ENABLED
+
 bool Copter::get_wp_distance_m(float &distance) const
 {
     // see GCS_MAVLINK_Copter::send_nav_controller_output()
@@ -981,7 +988,6 @@ bool Copter::get_rate_ef_targets(Vector3f& rate_ef_targets_rads) const
  */
 Copter::Copter(void)
     :
-    flight_modes(&g.flight_mode1),
     pos_variance_filt(FS_EKF_FILT_DEFAULT),
     vel_variance_filt(FS_EKF_FILT_DEFAULT),
     flightmode(&mode_stabilize),

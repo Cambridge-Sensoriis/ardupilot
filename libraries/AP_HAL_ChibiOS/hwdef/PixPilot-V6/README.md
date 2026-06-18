@@ -113,20 +113,20 @@ The PixPilot-V6 flight controller is sold by a range of resellers listed at [Mak
 
 All compatible RC protocols can be decoded by attaching the Receiver's output to the SBUS input pin next to the Servo/Output VCC input connector. Note that some protocols such as CRSF or FPort including telemetry, require connection to, and setup of, one of the UARTs instead of this pin.
 
-## Battery Monitor Settings
+## Battery Monitoring
 
 These should already be set by default. However, if lost or changed:
 
 Enable Battery monitor with `BATT_MONITOR=4`, then reboot, then set:
 
-BATT_VOLT_PIN=14
-BATT_CURR_PIN=15
-BATT_VOLT_MULT=18.0
-BATT_AMP_PERVLT=24.0
-BATT2_VOLT_PIN=13
-BATT2_CURR_PIN=4
-BATT2_VOLT_MULT=18.0
-BATT2_AMP_PERVLT=24.0
+- BATT_VOLT_PIN = 14
+- BATT_CURR_PIN = 15
+- BATT_VOLT_MULT = 18.0
+- BATT_AMP_PERVLT = 24.0
+- BATT2_VOLT_PIN = 13
+- BATT2_CURR_PIN = 4
+- BATT2_VOLT_MULT = 18.0
+- BATT2_AMP_PERVLT = 24.0
 
 ## DroneCAN capability
 
@@ -134,6 +134,6 @@ There are 2 CAN ports which allow connecting two independent CAN bus outputs. Ea
 
 ## Where to Buy
 
-`makeflyeasy <http://www.makeflyeasy.com>`_
+[makeflyeasy](http://www.makeflyeasy.com)
 
 [copywiki destination="plane,copter,rover,blimp"]

@@ -58,7 +58,7 @@ const AP_Param::GroupInfo AC_Fence::var_info[] = {
 
     // @Param: TYPE
     // @DisplayName: Fence Type
-    // @Description: Configured fence types held as bitmask. Max altitide, Circle and Polygon fences will be immediately enabled if configured. Min altitude fence will only be enabled once the minimum altitude is reached.
+    // @Description: Configured fence types held as bitmask. Max altitude, Circle and Polygon fences will be immediately enabled if configured. Min altitude fence will only be enabled once the minimum altitude is reached.
     // @Bitmask{Rover}: 1:Circle Centered on Home,2:Inclusion/Exclusion Circles+Polygons
     // @Bitmask{Copter, Plane, Sub}: 0:Max altitude,1:Circle Centered on Home,2:Inclusion/Exclusion Circles+Polygons,3:Min altitude
     // @User: Standard
@@ -981,7 +981,7 @@ uint8_t AC_Fence::check(bool disable_auto_fences)
 }
 
 // returns true if the destination is within fence (used to reject waypoints outside the fence)
-bool AC_Fence::check_destination_within_fence(const Location& loc)
+bool AC_Fence::check_location_within_fence(const Location& loc)
 {
     // Altitude fence check - Fence Ceiling
     if ((get_enabled_fences() & AC_FENCE_TYPE_ALT_MAX)) {
@@ -1231,7 +1231,7 @@ uint8_t AC_Fence::get_enabled_fences() const { return 0; }
 bool AC_Fence::pre_arm_check(char *failure_msg, const uint8_t failure_msg_len) const  { return true; }
 bool AC_Fence::terrain_database_required() const { return false; }
 uint8_t AC_Fence::check(bool disable_auto_fences) { return 0; }
-bool AC_Fence::check_destination_within_fence(const Location& loc) { return true; }
+bool AC_Fence::check_location_within_fence(const Location& loc) { return true; }
 float AC_Fence::get_breach_distance(uint8_t fence_type) const { return 0.0; }
 bool AC_Fence::get_breach_direction_NED(uint8_t fence_type, Vector3f& direction, Location& fence_check_pos) const { return false; }
 void AC_Fence::get_fence_names(uint8_t fences, ExpandingString& msg) { }

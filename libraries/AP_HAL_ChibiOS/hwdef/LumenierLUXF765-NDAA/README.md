@@ -157,25 +157,25 @@ The AT7456E communicates with the flight controller on SPI3.
 
 The LUX F765 - NDAA has a camera control output on PE10, which corresponds to GPIO 82. Additionally, RELAY3 is pre-configured to control GPIO 82.
 
-## Analog inputs
+## Analog Inputs
 
 The LUX F765 NDAA has 2 analog inputs:
 
 - PC2 -> Battery Current
 - PC3 -> Battery Voltage
 
-## Battery Monitor
+## Battery Monitoring
 
 The LUX F765 - NDAA has an internal voltage sensor and connections on the ESC connector
 for an external current sensor input. The voltage sensor can handle up to an 8S battery.
 
 The default parameters are as follows:
 
-BATT_MONITOR=4
-BATT_VOLT_PIN=12
-BATT_CURR_PIN=13
-BATT_VOLT_MULT=10.1
-BATT_AMP_PERVLT=17.0
+- BATT_MONITOR = 4
+- BATT_VOLT_PIN = 12
+- BATT_CURR_PIN = 13
+- BATT_VOLT_MULT = 10.1
+- BATT_AMP_PERVLT = 17.0
 
 ## Compass
 
@@ -187,7 +187,7 @@ Firmware for the LUX F765 - NDAA can be found [here](https://firmware.ardupilot.
 
 ## Loading Firmware
 
-The LUX F765 - NDAA does not come with ArduPilot firmware pre-installed. Use instructions here to load ArduPilot the first time :ref:`common-loading-firmware-onto-chibios-only-boards`.
+The LUX F765 - NDAA does not come with ArduPilot firmware pre-installed. Use instructions here to load ArduPilot the first time [loading firmware onto ChibiOS boards](https://ardupilot.org/copter/docs/common-loading-firmware-onto-chibios-only-boards.html).
 
 Initial firmware load can be done with DFU by plugging in USB with the
 bootloader button pressed. Then you should load the "with_bl.hex"
