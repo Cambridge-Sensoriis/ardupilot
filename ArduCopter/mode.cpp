@@ -825,6 +825,12 @@ void Mode::land_run_horizontal_control()
         Vector2f accel_ne_zero;
         // target vel will remain zero if landing target is stationary
         pos_control->input_pos_vel_accel_NE_m(target_pos_ne_m, target_vel_ne_ms, accel_ne_zero);
+
+        // align vehicle yaw with landing target orientation if option enabled
+        float target_yaw_rad;
+        if (copter.precland.yaw_align_enabled() && copter.precland.get_target_yaw_rad(target_yaw_rad)) {
+            auto_yaw.set_fixed_yaw_rad(target_yaw_rad, 0.0f, 0, false);
+        }
     }
 #endif
 
