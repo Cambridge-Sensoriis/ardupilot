@@ -829,7 +829,7 @@ void Mode::land_run_horizontal_control()
         // align vehicle yaw with landing target orientation if option enabled
         float target_yaw_rad;
         if (copter.precland.yaw_align_enabled() && copter.precland.get_target_yaw_rad(target_yaw_rad)) {
-            auto_yaw.set_fixed_yaw_rad(target_yaw_rad, 0.0f, 0, false);
+            auto_yaw.set_fixed_yaw_rad(target_yaw_rad, 0.0f, 0, true);
         }
     }
 #endif

@@ -641,6 +641,8 @@ bool AC_PrecLand::retrieve_los_meas(Vector3f& target_vec_unit, VectorFrame& fram
                 q.to_euler(roll_rad, pitch_rad, yaw_rad);
                 _target_yaw_rad = yaw_rad;
                 _target_yaw_valid = true;
+
+                GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "PrecLand: Target Yaw %.2f deg", rad_to_deg(_target_yaw_rad));
             }
         }
 
