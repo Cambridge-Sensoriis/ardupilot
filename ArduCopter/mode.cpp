@@ -830,6 +830,11 @@ void Mode::land_run_horizontal_control()
         float target_yaw_rad;
         if (copter.precland.yaw_align_enabled() && copter.precland.get_target_yaw_rad(target_yaw_rad)) {
             auto_yaw.set_fixed_yaw_rad(target_yaw_rad, 0.0f, 0, true);
+            GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "Aligning vehicle yaw with landing target");
+        }
+        else {
+            GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "Landing target yaw alignment disabled or not available");
+            GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "yaw_align_enabled: %d, get_target_yaw_rad: %d", copter.precland.yaw_align_enabled(), copter.precland.get_target_yaw_rad(target_yaw_rad));
         }
     }
 #endif
