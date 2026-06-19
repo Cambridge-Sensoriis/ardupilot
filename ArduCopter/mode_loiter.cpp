@@ -70,6 +70,13 @@ void ModeLoiter::precision_loiter_xy()
     Vector2f zero;
     // target vel will remain zero if landing target is stationary
     pos_control->input_pos_vel_accel_NE_m(target_pos_ne_m, target_vel_ne_ms, zero);
+
+    // align vehicle yaw with landing target orientation if option enabled
+    float target_yaw_rad;
+    if (copter.precland.yaw_align_enabled() && copter.precland.get_target_yaw_rad(target_yaw_rad)) {
+        auto_yaw.set_fixed_yaw_rad(target_yaw_rad, 0.0f, 0, true);
+    }
+
     // run pos controller
     pos_control->NE_update_controller();
 }
@@ -181,7 +188,16 @@ void ModeLoiter::run()
     }
 
     // call attitude controller
+#if AC_PRECLAND_ENABLED
+    if (_precision_loiter_active && copter.precland.yaw_align_enabled()) {
+        // use heading command from auto_yaw for smooth yaw alignment to target
+        attitude_control->input_thrust_vector_heading(loiter_nav->get_thrust_vector(), auto_yaw.get_heading());
+    } else {
+        attitude_control->input_thrust_vector_rate_heading_rads(loiter_nav->get_thrust_vector(), target_yaw_rate_rads, false);
+    }
+#else
     attitude_control->input_thrust_vector_rate_heading_rads(loiter_nav->get_thrust_vector(), target_yaw_rate_rads, false);
+#endif
     // run the vertical position controller and set output throttle
     pos_control->D_update_controller();
 }
