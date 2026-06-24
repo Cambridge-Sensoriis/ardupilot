@@ -47,7 +47,15 @@ bool ModeLoiter::do_precision_loiter()
         return false;        // don't move on the ground
     }
     // if the pilot *really* wants to move the vehicle, let them....
-    if (loiter_nav->get_pilot_desired_acceleration_NE_mss().length() > 0.5) {
+    // Check raw lean angle rather than get_pilot_desired_acceleration_NE_mss() which
+    // includes the coordinated-turn centripetal acceleration. When yaw alignment is
+    // active, the coordinated turn adds centripetal acceleration proportional to
+    // (desired_velocity * yaw_rate) which can exceed the 0.5 m/s² threshold even with
+    // sticks centred, falsely disabling precision loiter and causing spiral divergence.
+    float target_roll_rad, target_pitch_rad;
+    get_pilot_desired_lean_angles_rad(target_roll_rad, target_pitch_rad, loiter_nav->get_angle_max_rad(), attitude_control->get_althold_lean_angle_max_rad());
+    // radians(3.0f) is equivalent to 0.5 m/s² (g * sin(3 deg) ≈ 0.51 m/s²)
+    if (Vector2f(target_roll_rad, target_pitch_rad).length() > radians(3.0f)) {
         return false;
     }
     if (!copter.precland.target_acquired()) {
@@ -74,7 +82,16 @@ void ModeLoiter::precision_loiter_xy()
     // align vehicle yaw with landing target orientation if option enabled
     float target_yaw_rad;
     if (copter.precland.yaw_align_enabled() && copter.precland.get_target_yaw_rad(target_yaw_rad)) {
-        auto_yaw.set_fixed_yaw_rad(target_yaw_rad, 0.0f, 0, true);
+        // target_yaw_rad is a relative yaw error (pad_heading - vehicle_heading).
+        // Convert to an absolute NED target so set_fixed_yaw_rad() uses the
+        // non-integrating absolute path (_fixed_yaw_offset_rad is recalculated as
+        // wrap_PI(abs_target - _yaw_angle_rad) each frame).  The relative path resets
+        // the offset to the raw sensor error every frame, so _yaw_angle_rad integrates
+        // at the full slew rate even when it has already overshot the target, causing
+        // oscillation proportional to slew_rate * attitude_controller_lag.  The
+        // absolute path self-corrects: if _yaw_angle_rad overshoots, the recalculated
+        // offset goes negative and the commanded yaw retreats naturally.
+        auto_yaw.set_fixed_yaw_rad(wrap_PI(ahrs.get_yaw_rad() + target_yaw_rad), 0.0f, 0, false);
     }
 
     // run pos controller
