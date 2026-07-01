@@ -829,7 +829,10 @@ void Mode::land_run_horizontal_control()
         // align vehicle yaw with landing target orientation if option enabled
         float target_yaw_rad;
         if (copter.precland.yaw_align_enabled() && copter.precland.get_target_yaw_rad(target_yaw_rad)) {
-            auto_yaw.set_fixed_yaw_rad(target_yaw_rad, 0.0f, 0, true);
+            // Convert relative yaw error to absolute NED heading to use the
+            // self-correcting absolute path in set_fixed_yaw_rad (see mode_loiter.cpp).
+            const float abs_target_yaw = wrap_PI(copter.ahrs.get_yaw_rad() + target_yaw_rad);
+            auto_yaw.set_fixed_yaw_rad(abs_target_yaw, 0.0f, 0, false);
         }
         else {
             GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "Landing target yaw alignment disabled or not available");
