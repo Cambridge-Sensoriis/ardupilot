@@ -27,6 +27,7 @@
 #include <AP_Common/Location.h>
 #include <AP_NavEKF/AP_NavEKF_Source.h>
 #include <AP_NavEKF/AP_Nav_Common.h>
+#include "AP_AHRS_config.h"
 
 #define AP_AHRS_TRIM_LIMIT 10.0f        // maximum trim angle in degrees
 #define AP_AHRS_RP_P_MIN   0.05f        // minimum value for AHRS_RP_P parameter
@@ -61,6 +62,17 @@ public:
         friend class AP_AHRS_NavEKF2;
         friend class AP_AHRS_NavEKF3;
 
+        // is the AHRS subsystem healthy?
+        bool healthy;
+
+        // true if the AHRS has completed initialisation
+        bool initialised;
+
+        // filter fault status bitmask (see NavFilterFaultBit); non-zero
+        // if the backend is reporting one or more filter faults.
+        // Backends with no concept of filter faults leave this zero.
+        uint16_t filter_faults;
+
         // inertial sensor information
         uint8_t primary_gyro;
 
@@ -72,6 +84,7 @@ public:
         float yaw_rad;
         Matrix3f dcm_matrix;
         Quaternion quaternion;
+        uint16_t attitude_reset_count;  // counter incremented each time a sudden shift happens in attitude
 
         // backends must always return the result in the vehicle body
         // frame.  A backend using the autopilot sensors will need to
@@ -137,10 +150,28 @@ public:
             return location_valid;
         };
 
+        /*
+         * origin-relative functions
+         */
+        bool provides_common_origin;
+
+        // origin-relative position:
+        Vector2p position_NE;
+        bool position_NE_valid;  // true if position_NE is valid
+        postype_t position_D;
+        bool position_D_valid;   // true if position_D is valid
+
         bool get_hagl(float &height) const WARN_IF_UNUSED {
             height = hagl;
             return hagl_valid;
         }
+
+        /*
+         * air data estimates
+         */
+        // estimated wind in m/s, NED frame
+        Vector3f wind;
+        bool wind_valid;
 
         /*
          * Sensor-related information
@@ -165,6 +196,14 @@ public:
         // a compass was not involved:
         bool using_noncompass_for_yaw;
 
+#if AP_AHRS_GET_MAG_DATA_ENABLED
+        // estimators can provide their predicted magnetic fields:
+        Vector3f mag_field_NED;
+        bool mag_field_NED_valid;
+        Vector3f mag_field_corrections;
+        bool mag_field_corrections_valid;
+#endif // AP_AHRS_GET_MAG_DATA_ENABLED
+
         /*
          * filter status and estimates quality values:
          */
@@ -187,9 +226,6 @@ public:
         bool hagl_valid;
         float hagl;
     };
-
-    // init sets up INS board orientation
-    virtual void init();
 
     // Methods
     virtual void update() = 0;
@@ -215,9 +251,6 @@ public:
 
     // reset the current attitude, used on new IMU calibration
     virtual void reset() = 0;
-
-    // return a wind estimation vector, in m/s
-    virtual bool wind_estimate(Vector3f &wind) const = 0;
 
     // return an airspeed estimate if available. return true
     // if we have an estimate
@@ -265,38 +298,8 @@ public:
     }
     virtual bool get_origin(Location &ret) const = 0;
 
-    // return a position relative to origin in meters, North/East/Down
-    // order. This will only be accurate if have_inertial_nav() is
-    // true
-    virtual bool get_relative_position_NED_origin(Vector3p &vec) const WARN_IF_UNUSED {
-        return false;
-    }
-
-    // return a position relative to origin in meters, North/East
-    // order. Return true if estimate is valid
-    virtual bool get_relative_position_NE_origin(Vector2p &vecNE) const WARN_IF_UNUSED {
-        return false;
-    }
-
-    // return a Down position relative to origin in meters
-    // Return true if estimate is valid
-    virtual bool get_relative_position_D_origin(postype_t &posD) const WARN_IF_UNUSED {
-        return false;
-    }
-
     // return true if we will use compass for yaw
     virtual bool use_compass(void) = 0;
-
-    // is the AHRS subsystem healthy?
-    virtual bool healthy(void) const = 0;
-
-    // true if the AHRS has completed initialisation
-    virtual bool initialised(void) const {
-        return true;
-    };
-    virtual bool started(void) const {
-        return initialised();
-    };
 
     // return the amount of yaw angle change due to the last yaw angle reset in radians
     // returns the time of the last yaw angle reset or 0 if no reset has ever occurred

@@ -6334,6 +6334,59 @@ Brakes have negligible effect (with=%0.2fm without=%0.2fm delta=%0.2fm)
 
         self.progress("All done")
 
+    def BeaconPosition(self):
+        '''drive in MANUAL using only a (simulated) beacon for position'''
+        self.set_parameters({
+            "BCN_TYPE": 10,    # SITL
+            "BCN_LATITUDE": SITL_START_LOCATION.lat,
+            "BCN_LONGITUDE": SITL_START_LOCATION.lng,
+            "BCN_ALT": SITL_START_LOCATION.alt,
+            "BCN_ORIENT_YAW": 0,
+            "GPS1_TYPE": 0,    # no GPS
+            "EK3_ENABLE": 1,
+            "EK3_SRC1_POSXY": 4,  # Beacon
+            "EK3_SRC1_VELXY": 0,  # None
+            "EK3_SRC1_POSZ": 1,   # Baro
+            "EK3_SRC1_VELZ": 0,   # None
+            "EK3_SRC1_YAW": 1,    # Compass
+            "EK2_ENABLE": 0,
+            "AHRS_EKF_TYPE": 3,
+        })
+        self.reboot_sitl()
+
+        # becoming armable with the GPS disabled proves the EKF is deriving a
+        # usable position purely from the beacon library, which the vehicle
+        # initialises and updates via AP_Vehicle:
+        # (require_absolute=False as we have deliberately disabled the GPS)
+        self.wait_ready_to_arm(require_absolute=False)
+
+        # use get_mav_location() (GLOBAL_POSITION_INT, the EKF/beacon-fused
+        # position) rather than self.mav.location(), which blocks waiting for a
+        # GPS 3D fix that never arrives with the GPS disabled:
+        start_loc = self.get_mav_location()
+        self.progress("Beacon-derived start location: %s" % str(start_loc))
+
+        # arm and drive forward in MANUAL, confirming we can travel a known
+        # distance using only the beacon for position.  Throughout the drive,
+        # validate that the EKF's reported position (GLOBAL_POSITION_INT) stays
+        # close to the true simulator position (SIMSTATE):
+        self.context_push()
+        self.install_message_hook_context(
+            vehicle_test_suite.TestSuite.ValidateGlobalPositionIntAgainstSimState(
+                self, max_allowed_divergence=5))
+        self.change_mode('MANUAL')
+        self.arm_vehicle()
+        self.set_rc(3, 2000)   # full throttle forward
+        self.wait_distance(10, accuracy=2, timeout=60)
+        self.set_rc(3, 1500)   # stop
+        # hold station and confirm the beacon-derived position stays locked to
+        # the true position (GLOBAL_POSITION_INT vs SIMSTATE) while stationary:
+        self.delay_sim_time(30, reason="stationary beacon position tracking")
+        self.disarm_vehicle()
+        self.context_pop()
+
+        self.assert_current_onboard_log_contains_message("BCN")
+
     def PrivateChannel(self):
         '''test the serial option bit specifying a mavlink channel as private'''
         global mav2
@@ -7131,6 +7184,30 @@ Brakes have negligible effect (with=%0.2fm without=%0.2fm delta=%0.2fm)
         self.context_pop()
         self.reboot_sitl()
 
+    def AHRSOptionsDCMFallback(self):
+        '''check AHRS_OPTIONS inhibits DCM fallback when EKF lacks height data'''
+        self.context_collect('STATUSTEXT')
+        self.set_parameters({
+            "AHRS_OPTIONS": 3,  # disable DCM fallback
+            "EK3_SRC1_VELZ": 3,  # GPS
+            "EK3_SRC1_POSZ": 3,  # GPS
+            "SIM_GPS1_NUMSATS": 4,  # EKF does not like < 6, origin is never set
+        })
+        self.reboot_sitl()
+        # the EKF can provide attitude but not vertical velocity/position;
+        # the AHRS must still use it as DCM fallback is inhibited
+        self.wait_statustext("AHRS: EKF3 active", check_context=True, timeout=120)
+        # EKF must be reporting a valid attitude but no vertical position
+        self.wait_ekf_flags(mavutil.mavlink.ESTIMATOR_ATTITUDE, mavutil.mavlink.ESTIMATOR_POS_VERT_ABS, timeout=30)
+
+        self.start_subtest("DCM fallback used when not inhibited")
+        self.context_clear_collection('STATUSTEXT')
+        self.set_parameter("AHRS_OPTIONS", 0)
+        self.reboot_sitl()
+        self.delay_sim_time(60)
+        if self.statustext_in_collections("AHRS: EKF3 active"):
+            raise NotAchievedException("AHRS used EKF3 without EKF height data")
+
     def SafetySwitch(self):
         '''check safety switch works'''
         self.start_subtest("Make sure we don't start moving when safety switch enabled")
@@ -7490,6 +7567,7 @@ return update()
             self.MAV_CMD_NAV_RETURN_TO_LAUNCH,
             self.StickMixingAuto,
             self.AutoDock,
+            self.BeaconPosition,
             self.PrivateChannel,
             self.GCSFailsafe,
             self.RoverInitialMode,
@@ -7516,6 +7594,7 @@ return update()
             self.JammingSimulation,
             self.BatteryInvalid,
             self.REQUIRE_LOCATION_FOR_ARMING,
+            self.AHRSOptionsDCMFallback,
             self.GetMessageInterval,
             self.SafetySwitch,
             self.EnterModeOnSafetySwitch,
