@@ -116,6 +116,12 @@ public:
 
     bool allow_precland_after_reposition() const { return _options & PLND_OPTION_PRECLAND_AFTER_REPOSITION; }
     bool do_fast_descend() const { return _options & PLND_OPTION_FAST_DESCEND; }
+    bool yaw_align_enabled() const { return _options & PLND_OPTION_YAW_ALIGN; }
+
+    // returns the absolute NED target yaw (rad) derived from the landing target quaternion,
+    // computed at the time the measurement was received.
+    // returns true if a valid target yaw is available
+    bool get_target_yaw_rad(float &yaw_rad) const;
 
     /*
       get target location lat/lon. Note that altitude in returned
@@ -160,6 +166,7 @@ private:
         PLND_OPTION_MOVING_TARGET = (1 << 0),
         PLND_OPTION_PRECLAND_AFTER_REPOSITION = (1 << 1),
         PLND_OPTION_FAST_DESCEND = (1 << 2),
+        PLND_OPTION_YAW_ALIGN = (1 << 3),
     };
 
     // frames for vectors from vehicle to target
@@ -213,6 +220,8 @@ private:
     AP_Float                    _sensor_max_alt_m;      // PrecLand maximum height the sensor can detect target
     AP_Int16                    _options;               // Bitmask for extra options
     AP_Enum<Rotation>           _orient;                // Orientation of camera/sensor
+    AP_Float                    _xy_pos_nse_base;       // xy position noise minimum
+    AP_Float                    _xy_pos_nse_grad;     // xy position noise growth (per m of altitude)
 
     uint32_t                    _last_update_ms;            // system time in millisecond when update was last called
     bool                        _target_acquired;           // true if target has been seen recently after estimator is initialized
@@ -235,6 +244,9 @@ private:
     Vector2f                    _target_pos_rel_out_ne_m;   // target's position relative to the camera, fed into position controller
     Vector2f                    _target_vel_rel_out_ne_ms;  // target's velocity relative to the CG, fed into position controller
     Vector3f                    _last_veh_velocity_NED_ms;  // AHRS velocity at last estimate
+
+    float                       _target_yaw_rad;            // yaw extracted from landing target quaternion
+    bool                        _target_yaw_valid;          // true if target yaw has been set from a valid quaternion
 
     TargetState                 _current_target_state;      // Current status of the landing target
 

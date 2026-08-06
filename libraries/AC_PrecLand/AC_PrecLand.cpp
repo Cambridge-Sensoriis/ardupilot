@@ -178,7 +178,7 @@ const AP_Param::GroupInfo AC_PrecLand::var_info[] = {
     // @Param: OPTIONS
     // @DisplayName: Precision Landing Extra Options
     // @Description: Precision Landing Extra Options
-    // @Bitmask: 0: Moving Landing Target, 1: Allow Precision Landing after manual reposition, 2: Maintain high speed in final descent
+    // @Bitmask: 0: Moving Landing Target, 1: Allow Precision Landing after manual reposition, 2: Maintain high speed in final descent, 3: Align yaw to landing target orientation
     // @User: Advanced
     AP_GROUPINFO("OPTIONS", 17, AC_PrecLand, _options, 0),
 
@@ -189,6 +189,22 @@ const AP_Param::GroupInfo AC_PrecLand::var_info[] = {
     // @User: Advanced
     // @RebootRequired: True
     AP_GROUPINFO_FRAME("ORIENT", 18, AC_PrecLand, _orient, AC_PRECLAND_ORIENT_DEFAULT, AP_PARAM_FRAME_ROVER), 
+
+    // @Param: XY_NSE_BASE
+    // @DisplayName: Kalman Filter Base XY Noise
+    // @Description: Kalman Filter Minimum lateral position noise. Sets the lowest allowed XY noise at low altitude
+    // @Units: m
+    // @Range: 0.0001 2.5
+    // @User: Advanced
+    AP_GROUPINFO("XY_NSE_BASE", 19, AC_PrecLand, _xy_pos_nse_base, 0.02f),
+
+    // @Param: XY_NSE_GROWTH
+    // @DisplayName: Kalman Filter XY Noise Growth
+    // @Description: Kalman Filter XY Position Noise gradient, XY Noise increases linearly with z height above target
+    // @Units: m/m
+    // @Range: 0 - 0.05
+    // @User: Advanced
+    AP_GROUPINFO("XY_NSE_GRAD", 20, AC_PrecLand, _xy_pos_nse_grad, 0.01f),
 
     AP_GROUPEND
 };
@@ -553,7 +569,7 @@ void AC_PrecLand::run_estimator(float rangefinder_alt_m, bool rangefinder_alt_va
 
             // Update if a new Line-Of-Sight measurement is available
             if (construct_pos_meas_using_rangefinder(rangefinder_alt_m, rangefinder_alt_valid)) {
-                float xy_pos_var = sq(_target_pos_rel_meas_ned_m.z*(0.01f + 0.01f*AP::ahrs().get_gyro().length()) + 0.02f);
+                float xy_pos_var = sq(_target_pos_rel_meas_ned_m.z*(_xy_pos_nse_grad + 0.01f*AP::ahrs().get_gyro().length()) + _xy_pos_nse_base);
                 if (!_estimator_initialized) {
                     // Inform the user landing target has been found
                     GCS_SEND_TEXT(MAV_SEVERITY_INFO, "PrecLand: Target Found");
@@ -630,6 +646,25 @@ bool AC_PrecLand::retrieve_los_meas(Vector3f& target_vec_unit, VectorFrame& fram
         if (!is_zero(_yaw_align_cd)) {
             // Apply sensor yaw alignment rotation
             target_vec_unit.rotate_xy(cd_to_rad(_yaw_align_cd));
+        }
+
+        // extract yaw from landing target quaternion if yaw alignment is enabled
+        if (yaw_align_enabled()) {
+            const Quaternion q = _backend->get_los_quat();
+            if (!q.is_zero()) {
+                // extract yaw component from the quaternion and convert to
+                // absolute NED yaw now, using the current vehicle heading.
+                // Storing relative yaw and converting in the control loop would
+                // cause the absolute target to move with the vehicle between
+                // measurements (stale_rel + changing_vehicle_yaw), producing
+                // yaw oscillation proportional to measurement latency.
+                float roll_rad, pitch_rad, yaw_rad;
+                q.to_euler(roll_rad, pitch_rad, yaw_rad);
+                float delayed_roll_rad, delayed_pitch_rad, delayed_yaw_rad;
+                (*_inertial_history)[0]->Tbn.to_euler(&delayed_roll_rad, &delayed_pitch_rad, &delayed_yaw_rad);
+                _target_yaw_rad = wrap_PI(delayed_yaw_rad + yaw_rad);
+                _target_yaw_valid = true;
+            }
         }
 
         // rotate vector based on sensor orientation to get correct body frame vector
@@ -771,6 +806,17 @@ void AC_PrecLand::run_output_prediction()
 
     // record the last time there was a target output
     _last_valid_target_ms = AP_HAL::millis();
+}
+
+// returns the target yaw (rad) extracted from the landing target quaternion
+// returns true if a valid target yaw is available
+bool AC_PrecLand::get_target_yaw_rad(float &yaw_rad) const
+{
+    if (!_target_yaw_valid || !_target_acquired) {
+        return false;
+    }
+    yaw_rad = _target_yaw_rad;
+    return true;
 }
 
 /*
