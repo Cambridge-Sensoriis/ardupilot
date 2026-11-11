@@ -210,10 +210,10 @@ const AP_Param::GroupInfo GCS_MAVLINK::var_info[] = {
 
     // @Param: _OPTIONS
     // @DisplayName: Bitmask for configuring this telemetry channel
-    // @Description: Bitmask for configuring this telemetry channel. For having effect on all channels, set the relevant mask in all MAVx_OPTIONS parameters. Keep in mind that part of the flags may require a reboot to take action.
+    // @Description: Bitmask for configuring this telemetry channel. For having effect on all channels, set the relevant mask in all MAVx_OPTIONS parameters. Keep in mind that part of the flags may require a reboot to take action. Bit 4 allows valid DEBUG_FLOAT_ARRAY messages received on this channel to be forwarded using normal routing; otherwise they are processed locally only. Bit 4 takes effect immediately and does not allow bad-CRC DEBUG_FLOAT_ARRAY forwarding.
     // @RebootRequired: True
     // @User: Standard
-    // @Bitmask: 0:Accept unsigned MAVLink2 messages, 1:Don't forward mavlink to/from, 2:Ignore Streamrate, 3:forward mavlink packets that don't pass CRC
+    // @Bitmask: 0:Accept unsigned MAVLink2 messages, 1:Don't forward mavlink to/from, 2:Ignore Streamrate, 3:forward mavlink packets that don't pass CRC, 4:Allow DEBUG_FLOAT_ARRAY forwarding
     AP_GROUPINFO("_OPTIONS",   20, GCS_MAVLINK, options, 0),
 
     // PARAMETER_CONVERSION - Added: May-2025 for ArduPilot-4.7

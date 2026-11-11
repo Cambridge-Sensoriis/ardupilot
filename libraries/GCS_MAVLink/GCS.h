@@ -539,6 +539,7 @@ protected:
         NO_FORWARD                = (1U << 1),  // don't forward MAVLink data to or from this device
         NOSTREAMOVERRIDE          = (1U << 2),  // ignore REQUEST_DATA_STREAM messages (eg. from GCSs)
         FORWARD_BAD_CRC           = (1U << 3),  // forward mavlink packets that don't pass CRC
+        FORWARD_DEBUG_FLOAT_ARRAY = (1U << 4),
     };
     bool option_enabled(Option option) const {
         return options & static_cast<uint16_t>(option);

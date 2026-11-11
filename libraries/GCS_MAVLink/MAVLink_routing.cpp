@@ -112,6 +112,7 @@ bool MAVLink_routing::check_and_forward(uint8_t framing_status,
         if (in_link.option_enabled(GCS_MAVLINK::Option::FORWARD_BAD_CRC) &&
             msg.msgid != MAVLINK_MSG_ID_RADIO &&
             msg.msgid != MAVLINK_MSG_ID_RADIO_STATUS &&
+            msg.msgid != MAVLINK_MSG_ID_DEBUG_FLOAT_ARRAY &&
             msg.msgid != MAVLINK_MSG_ID_ADSB_VEHICLE) {
             forward(in_link, msg);
         }
@@ -137,6 +138,11 @@ bool MAVLink_routing::check_and_forward(uint8_t framing_status,
     if (msg.msgid == MAVLINK_MSG_ID_RADIO ||
         msg.msgid == MAVLINK_MSG_ID_RADIO_STATUS) {
         // don't forward RADIO packets
+        return true;
+    }
+
+    if (msg.msgid == MAVLINK_MSG_ID_DEBUG_FLOAT_ARRAY &&
+        !in_link.option_enabled(GCS_MAVLINK::Option::FORWARD_DEBUG_FLOAT_ARRAY)) {
         return true;
     }
 
