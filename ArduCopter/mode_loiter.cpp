@@ -51,7 +51,9 @@ bool ModeLoiter::do_precision_loiter()
         return false;        // don't move on the ground
     }
     // if the pilot *really* wants to move the vehicle, let them....
-    if (loiter_nav->get_pilot_desired_acceleration().length() > 50.0f) {
+    float target_roll_cd, target_pitch_cd;
+    get_pilot_desired_lean_angles(target_roll_cd, target_pitch_cd, loiter_nav->get_angle_max_cd(), attitude_control->get_althold_lean_angle_max_cd());
+    if (Vector2f(target_roll_cd, target_pitch_cd).length() > 300.0f) {
         return false;
     }
     if (!copter.precland.target_acquired()) {
@@ -186,7 +188,18 @@ void ModeLoiter::run()
 #endif
 
         // call attitude controller
+    #if PRECISION_LANDING == ENABLED
+        float target_yaw_rad;
+        if (_precision_loiter_active && copter.precland.yaw_align_enabled() && copter.precland.get_target_yaw_rad(target_yaw_rad)) {
+            auto_yaw.set_fixed_yaw(degrees(target_yaw_rad), 0.0f, 0, false);
+            attitude_control->input_thrust_vector_heading(loiter_nav->get_thrust_vector(), auto_yaw.yaw());
+        } else {
+            auto_yaw.set_mode(AUTO_YAW_HOLD);
+            attitude_control->input_thrust_vector_rate_heading(loiter_nav->get_thrust_vector(), target_yaw_rate, false);
+        }
+    #else
         attitude_control->input_thrust_vector_rate_heading(loiter_nav->get_thrust_vector(), target_yaw_rate, false);
+    #endif
 
         // get avoidance adjusted climb rate
         target_climb_rate = get_avoidance_adjusted_climbrate(target_climb_rate);

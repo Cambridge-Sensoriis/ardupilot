@@ -450,6 +450,7 @@ protected:
     void handle_request_data_stream(const mavlink_message_t &msg);
 
     virtual void handle_command_ack(const mavlink_message_t &msg);
+    virtual void handle_debug_float_array(const mavlink_message_t &msg);
     void handle_set_mode(const mavlink_message_t &msg);
     void handle_command_int(const mavlink_message_t &msg);
 

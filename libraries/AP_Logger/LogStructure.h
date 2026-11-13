@@ -687,6 +687,18 @@ struct PACKED log_MotBatt {
     uint8_t mot_fail_flags;
 };
 
+struct PACKED log_DEBUG_FLOAT_ARRAY {
+  LOG_PACKET_HEADER;
+  uint64_t time_us;
+  uint16_t array_id;
+  float dataA64[16];
+  float dataB64[16];
+  float dataC64[16];
+  float dataD16[4];
+  float dataE16[4];
+  float dataF16[4];
+};
+
 struct PACKED log_VER {
     LOG_PACKET_HEADER;
     uint64_t time_us;
@@ -1333,7 +1345,9 @@ LOG_STRUCTURE_FROM_AIS \
     { LOG_VER_MSG, sizeof(log_VER), \
       "VER",   "QBHBBBBIZH", "TimeUS,BT,BST,Maj,Min,Pat,FWT,GH,FWS,APJ", "s---------", "F---------", false }, \
     { LOG_MOTBATT_MSG, sizeof(log_MotBatt), \
-      "MOTB", "QffffB",  "TimeUS,LiftMax,BatVolt,ThLimit,ThrAvMx,FailFlags", "s-----", "F-----" , true }
+      "MOTB", "QffffB",  "TimeUS,LiftMax,BatVolt,ThLimit,ThrAvMx,FailFlags", "s-----", "F-----" , true }, \
+    { LOG_DEBUG_FLOAT_ARRAY_MSG, sizeof(log_DEBUG_FLOAT_ARRAY), \
+      "DBGF", "QHZZZNNN", "TimeUS,ArrayID,DataA64,DataB64,DataC64,DataD16,DataE16,DataF16", "s-------", "F-------", true }
 
 // message types 0 to 63 reserved for vehicle specific use
 
@@ -1420,6 +1434,7 @@ enum LogMessages : uint8_t {
     LOG_RCOUT3_MSG,
     LOG_IDS_FROM_FENCE,
 
+    LOG_DEBUG_FLOAT_ARRAY_MSG,
     _LOG_LAST_MSG_
 };
 

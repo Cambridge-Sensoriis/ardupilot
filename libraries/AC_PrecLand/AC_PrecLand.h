@@ -111,6 +111,8 @@ public:
     AC_PrecLand_StateMachine::RetryAction get_retry_behaviour() const { return static_cast<AC_PrecLand_StateMachine::RetryAction>(_retry_behave.get()); }
 
     bool allow_precland_after_reposition() const { return _options & PLND_OPTION_PRECLAND_AFTER_REPOSITION; }
+    bool yaw_align_enabled() const { return _options & PLND_OPTION_YAW_ALIGN; }
+    bool get_target_yaw_rad(float &yaw_rad) const;
 
     // parameter var table
     static const struct AP_Param::GroupInfo var_info[];
@@ -134,6 +136,7 @@ private:
         PLND_OPTION_DISABLED = 0,
         PLND_OPTION_MOVING_TARGET = (1 << 0),
         PLND_OPTION_PRECLAND_AFTER_REPOSITION = (1 << 1),
+        PLND_OPTION_YAW_ALIGN = (1 << 3),
     };
 
     // check the status of the target
@@ -179,6 +182,8 @@ private:
     AP_Int8                     _retry_behave;      // Action to do when trying a landing retry
     AP_Float                    _sensor_min_alt;     // PrecLand minimum height required for detecting target
     AP_Float                    _sensor_max_alt;     // PrecLand maximum height the sensor can detect target
+    AP_Float                    _xy_pos_nse_base;
+    AP_Float                    _xy_pos_nse_grad;
     AP_Int16                    _options;            // Bitmask for extra options
     AP_Enum<Rotation>           _orient;             // Orientation of camera/sensor
 
@@ -204,6 +209,9 @@ private:
     Vector2f                    _target_vel_rel_out_NE; // target's velocity relative to the CG, fed into position controller
 
     TargetState                 _current_target_state;  // Current status of the landing target
+
+    float                       _target_yaw_rad;
+    bool                        _target_yaw_valid;
 
     // structure and buffer to hold a history of vehicle velocity
     struct inertial_data_frame_s {

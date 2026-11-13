@@ -172,7 +172,7 @@ const AP_Param::GroupInfo AC_PrecLand::var_info[] = {
     // @Param: OPTIONS
     // @DisplayName: Precision Landing Extra Options
     // @Description: Precision Landing Extra Options
-    // @Bitmask: 0: Moving Landing Target, 1: Allow Precision Landing after manual reposition 
+    // @Bitmask: 0: Moving Landing Target, 1: Allow Precision Landing after manual reposition, 3: Align yaw to landing target orientation
     // @User: Advanced
     AP_GROUPINFO("OPTIONS", 17, AC_PrecLand, _options, 0),
 
@@ -183,6 +183,21 @@ const AP_Param::GroupInfo AC_PrecLand::var_info[] = {
     // @User: Advanced
     // @RebootRequired: True
     AP_GROUPINFO_FRAME("ORIENT", 18, AC_PrecLand, _orient, AC_PRECLAND_ORIENT_DEFAULT, AP_PARAM_FRAME_ROVER),
+
+    // @Param: XY_NSE_BASE
+    // @DisplayName: Kalman Filter Base XY Noise
+    // @Description: Minimum lateral position noise at low altitude
+    // @Units: m
+    // @Range: 0.0001 2.5
+    // @User: Advanced
+    AP_GROUPINFO("XY_NSE_BASE", 19, AC_PrecLand, _xy_pos_nse_base, 0.02f),
+
+    // @Param: XY_NSE_GRAD
+    // @DisplayName: Kalman Filter XY Noise Growth
+    // @Description: Lateral position noise growth with height above the target
+    // @Range: 0 0.05
+    // @User: Advanced
+    AP_GROUPINFO("XY_NSE_GRAD", 20, AC_PrecLand, _xy_pos_nse_grad, 0.01f),
 
     AP_GROUPEND
 };
@@ -531,7 +546,7 @@ void AC_PrecLand::run_estimator(float rangefinder_alt_m, bool rangefinder_alt_va
 
             // Update if a new Line-Of-Sight measurement is available
             if (construct_pos_meas_using_rangefinder(rangefinder_alt_m, rangefinder_alt_valid)) {
-                float xy_pos_var = sq(_target_pos_rel_meas_NED.z*(0.01f + 0.01f*AP::ahrs().get_gyro().length()) + 0.02f);
+                float xy_pos_var = sq(_target_pos_rel_meas_NED.z*(_xy_pos_nse_grad + 0.01f*AP::ahrs().get_gyro().length()) + _xy_pos_nse_base);
                 if (!_estimator_initialized) {
                     // Inform the user landing target has been found
                     gcs().send_text(MAV_SEVERITY_INFO, "PrecLand: Target Found");
@@ -609,6 +624,17 @@ bool AC_PrecLand::retrieve_los_meas(Vector3f& target_vec_unit_body)
             target_vec_unit_body.rotate_xy(radians(_yaw_align*0.01f));
         }
 
+        if (yaw_align_enabled()) {
+            const Quaternion target_quat = _backend->get_los_quat();
+            if (!target_quat.is_zero()) {
+                float roll_rad, pitch_rad, yaw_rad;
+                target_quat.to_euler(roll_rad, pitch_rad, yaw_rad);
+                float delayed_roll_rad, delayed_pitch_rad, delayed_yaw_rad;
+                (*_inertial_history)[0]->Tbn.to_euler(&delayed_roll_rad, &delayed_pitch_rad, &delayed_yaw_rad);
+                _target_yaw_rad = wrap_PI(delayed_yaw_rad + yaw_rad);
+                _target_yaw_valid = true;
+            }
+        }
 
         // rotate vector based on sensor oriention to get correct body frame vector
         if (_orient != ROTATION_PITCH_270) {
@@ -627,6 +653,15 @@ bool AC_PrecLand::retrieve_los_meas(Vector3f& target_vec_unit_body)
     } else {
         return false;
     }
+}
+
+bool AC_PrecLand::get_target_yaw_rad(float &yaw_rad) const
+{
+    if (!_target_yaw_valid || !_target_acquired) {
+        return false;
+    }
+    yaw_rad = _target_yaw_rad;
+    return true;
 }
 
 bool AC_PrecLand::construct_pos_meas_using_rangefinder(float rangefinder_alt_m, bool rangefinder_alt_valid)

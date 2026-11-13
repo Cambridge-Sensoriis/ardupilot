@@ -24,6 +24,7 @@ public:
     // provides a unit vector towards the target in body frame
     //  returns same as have_los_meas()
     virtual bool get_los_body(Vector3f& dir_body) = 0;
+    Quaternion get_los_quat() const { return _los_quat; }
 
     // returns system time in milliseconds of last los measurement
     virtual uint32_t los_meas_time_ms() = 0;
@@ -41,6 +42,7 @@ public:
     int8_t get_bus(void) const { return _frontend._bus.get(); }
     
 protected:
+    Quaternion _los_quat{0.0f, 0.0f, 0.0f, 0.0f};
     const AC_PrecLand&  _frontend;          // reference to precision landing front end
     AC_PrecLand::precland_state &_state;    // reference to this instances state
 };

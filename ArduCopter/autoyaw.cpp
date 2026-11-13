@@ -103,10 +103,11 @@ void Mode::AutoYaw::set_mode(autopilot_yaw_mode yaw_mode)
 // set_fixed_yaw - sets the yaw look at heading for auto mode
 void Mode::AutoYaw::set_fixed_yaw(float angle_deg, float turn_rate_ds, int8_t direction, bool relative_angle)
 {
-    _last_update_ms = millis();
-
-    _yaw_angle_cd = copter.attitude_control->get_att_target_euler_cd().z;
-    _yaw_rate_cds = 0.0;
+    if (_mode != AUTO_YAW_FIXED || relative_angle) {
+        _last_update_ms = millis();
+        _yaw_angle_cd = copter.attitude_control->get_att_target_euler_cd().z;
+        _yaw_rate_cds = 0.0;
+    }
 
     // calculate final angle as relative to vehicle heading or absolute
     if (relative_angle) {
